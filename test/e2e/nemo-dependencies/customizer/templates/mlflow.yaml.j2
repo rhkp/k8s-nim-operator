@@ -1,5 +1,5 @@
 global:
-  storageClass: {{ '"local-path"' if localPathProvisioner.enabled else '""' }}
+  storageClass: {{ '"local-path"' if localPathProvisioner.enabled else pvc.storage_class | to_json }}
 
 postgresql:
   enabled: true

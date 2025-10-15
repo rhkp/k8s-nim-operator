@@ -31,5 +31,17 @@ testbin/*
 kubeconfig
 .env
 
+# Generated Ansible files (contain secrets)
+ds-postgresql-values.yaml
+entity-store-db-values.yaml
+customizer-postgresql-values.yaml
+customizer-opentelemetry-values.yaml
+mlflow.yaml
+volcano-oc-rbac.yaml
+secrets.yaml
+
+# Environment-specific configuration (documented in README with placeholders)
+values.yaml
+
 # e2e logs
 e2e_logs
