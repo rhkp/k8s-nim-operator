@@ -31,7 +31,7 @@ wandb:
   encryptionkey: encryptionkey
 
 mlflow:
-  enabled: false
+  enabled: true
   helm_oci_registry: oci://registry-1.docker.io/bitnamicharts/mlflow
   helm_release_name: mlflow
   postgresql_username: bn_mlflow

@@ -1,8 +1,32 @@
 global:
   storageClass: {{ '"local-path"' if localPathProvisioner.enabled else pvc.storage_class | to_json }}
 
+# Override with working trusted images
+image:
+  registry: docker.io
+  repository: library/python
+  tag: 3.9-slim
+
+gitImage:
+  registry: docker.io
+  repository: alpine/git
+  tag: latest
+
+volumePermissions:
+  image:
+    registry: docker.io
+    repository: library/busybox
+    tag: latest
+
+minio:
+  enabled: false
+
 postgresql:
   enabled: true
+  image:
+    registry: docker.io
+    repository: bitnami/postgresql
+    tag: latest
   auth:
     username: {{ mlflow.postgresql_username }}
     password: {{ mlflow.postgresql_password }}
@@ -12,9 +36,23 @@ tracking:
   auth:
     enabled: false
   runUpgradeDB: false
+  enableDefaultInitContainers: false
   service:
     type: ClusterIP
   resourcesPreset: medium
+  command:
+    - /bin/sh
+    - -c
+    - |
+      pip install --prefix=/tmp/pip-install mlflow==2.12.2 psycopg2-binary
+      export PATH="/tmp/pip-install/bin:$PATH"
+      export PYTHONPATH="/tmp/pip-install/lib/python3.9/site-packages:$PYTHONPATH"
+      mlflow server \
+        --backend-store-uri=postgresql://bn_mlflow:$(MLFLOW_DATABASE_PASSWORD)@mlflow-postgresql:5432/bitnami_mlflow \
+        --artifacts-destination=/bitnami/mlflow/mlartifacts \
+        --serve-artifacts \
+        --host=0.0.0.0 \
+        --port=5000
 
 run:
   enabled: false

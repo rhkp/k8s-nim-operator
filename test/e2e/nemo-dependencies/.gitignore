@@ -38,6 +38,7 @@ customizer-postgresql-values.yaml
 customizer-opentelemetry-values.yaml
 mlflow.yaml
 volcano-oc-rbac.yaml
+jupyter-ocp-rbac.yaml
 secrets.yaml
 
 # Environment-specific configuration (documented in README with placeholders)

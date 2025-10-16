@@ -158,9 +158,22 @@ The playbook creates sensitive files that are git-ignored:
 - `customizer-opentelemetry-values.yaml` - OpenTelemetry collector configuration
 - `secrets.yaml` - Customizer PostgreSQL password
 
-#### MLflow Disabled
+#### MLflow Enabled
 
-**Note**: MLflow is currently disabled (`mlflow.enabled: false`) due to Bitnami image availability issues. The Bitnami MLflow images referenced in the original configuration are not available in the registry, causing deployment failures.
+**MLflow is now enabled** (`mlflow.enabled: true`) with working image alternatives compatible with NVIDIA NIM Operator v3.0.0.
+
+**Image Configuration for v3.0.0 Compatibility:**
+- **MLflow Server**: `docker.io/library/python:3.9-slim` with runtime installation
+- **PostgreSQL**: `docker.io/bitnami/postgresql:latest`
+- **Git Init Container**: `docker.io/alpine/git:latest`
+- **Volume Permissions**: `docker.io/library/busybox:latest`
+- **MinIO**: Disabled (incompatible official image with Bitnami configuration)
+
+**Custom Installation Method:**
+MLflow is installed at runtime using `pip install --prefix=/tmp/pip-install mlflow==2.12.2 psycopg2-binary` to work around read-only filesystem restrictions in OpenShift security contexts.
+
+**Additional Generated Files:**
+- `mlflow.yaml` - MLflow Helm values with working image overrides (git-ignored)
 
 ### Verification
 
@@ -174,6 +187,9 @@ oc logs customizer-pg-postgresql-0 -n <your-namespace>
 
 # Verify OpenTelemetry collector is running
 oc logs -l app.kubernetes.io/name=opentelemetry-collector -n <your-namespace>
+
+# Verify MLflow tracking server is running
+oc logs -l app.kubernetes.io/name=mlflow -n <your-namespace>
 ```
 
 Expected output:
@@ -181,6 +197,8 @@ Expected output:
 NAME                                           READY   STATUS    RESTARTS   AGE
 customizer-pg-postgresql-0                     1/1     Running   0          10m
 opentelemetry-collector-xxxxx                  1/1     Running   0          10m
+mlflow-tracking-xxxxx                          1/1     Running   0          10m
+mlflow-postgresql-0                            1/1     Running   0          10m
 ```
 
 ## Common Troubleshooting {#common-troubleshooting}
