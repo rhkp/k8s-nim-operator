@@ -7,7 +7,7 @@
       vars:
         namespace: "{{ installation_namespace }}"
         volcano:
-          enabled: true
+          enabled: false  # SAFETY: Disabled to prevent cluster-wide webhook issues
           helm_repo_name: volcano
           helm_repo_url: https://volcano-sh.github.io/helm-charts
           chart_name: volcano/volcano

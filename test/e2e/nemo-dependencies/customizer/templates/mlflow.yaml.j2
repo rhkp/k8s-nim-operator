@@ -13,13 +13,48 @@ gitImage:
   tag: latest
 
 volumePermissions:
+  enabled: false  # Disable to avoid Bitnami-specific utilities
   image:
     registry: docker.io
     repository: library/busybox
     tag: latest
 
 minio:
-  enabled: false
+  enabled: true
+  image:
+    registry: quay.io
+    repository: minio/minio
+    tag: latest
+  # Override Bitnami-specific settings for official MinIO image
+  auth:
+    rootUser: "minioadmin"
+    rootPassword: "minioadmin"
+  defaultBuckets: "mlflow"
+  # Use standard MinIO data path instead of Bitnami path
+  persistence:
+    mountPath: "/data"
+  # Disable init containers that expect Bitnami utilities
+  enableDefaultInitContainers: false
+  # Disable bucket provisioning job that fails with wait-for-available-minio
+  provisioning:
+    enabled: false
+  # Override environment variables for official MinIO
+  extraEnvVars:
+    - name: MINIO_ROOT_USER
+      value: "minioadmin"
+    - name: MINIO_ROOT_PASSWORD
+      value: "minioadmin"
+    - name: MINIO_DEFAULT_BUCKETS
+      value: "mlflow"
+  # Use official MinIO command instead of Bitnami wrapper
+  command:
+    - "/usr/bin/docker-entrypoint.sh"
+  args:
+    - "minio"
+    - "server"
+    - "/data"
+    - "--console-address"
+    - ":9001"
 
 postgresql:
   enabled: true
@@ -30,6 +65,8 @@ postgresql:
   auth:
     username: {{ mlflow.postgresql_username }}
     password: {{ mlflow.postgresql_password }}
+  # Disable init containers that may expect Bitnami utilities
+  enableDefaultInitContainers: false
 
 tracking:
   enabled: true
