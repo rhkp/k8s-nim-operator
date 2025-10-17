@@ -6,13 +6,23 @@ server:
     - "server"
   servicePort: 2746
   secure: true
+  # Disable cluster template access to avoid ClusterRole conflicts
+  clusterWorkflowTemplates:
+    enabled: false
 crds:
-  install: true
+  install: false  # Skip CRD installation - use existing CRDs from Data Science Pipelines operator
+# Enable single namespace mode to avoid cluster-wide ClusterRole conflicts
+singleNamespace: true
+# Disable aggregate ClusterRoles to avoid conflicts with orphaned resources
+createAggregateRoles: false
 workflow:
   rbac:
     create: true
 controller:
   replicas: 1
+  # Disable cluster template access to avoid ClusterRole conflicts
+  clusterWorkflowTemplates:
+    enabled: false
   workflowDefaults:
     spec:
       imagePullSecrets:

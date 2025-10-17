@@ -41,6 +41,16 @@ volcano-oc-rbac.yaml
 jupyter-ocp-rbac.yaml
 secrets.yaml
 
+# Evaluator generated files (contain secrets and configuration)
+evaluator-postgresql-values.yaml
+milvus-values.yaml
+opentelemetry-values.yaml
+zipkin-values.yaml
+argo-values.yaml
+argo-sa.yaml
+milvus-oc-rbac.yaml
+argo-validation.yaml
+
 # Environment-specific configuration (documented in README with placeholders)
 values.yaml
 

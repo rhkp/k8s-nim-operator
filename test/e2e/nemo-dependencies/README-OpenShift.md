@@ -34,6 +34,14 @@ Quick guide for deploying NVIDIA NIM Operator E2E test dependencies on OpenShift
   - [Generated Files](#generated-files-4)
   - [Verification](#verification-4)
 
+- [Evaluator Component Deployment](#evaluator-component-deployment)
+  - [Generated Files](#generated-files-5)
+  - [Argo Workflows Configuration](#argo-workflows-configuration)
+    - [Cluster Conflict Resolution](#cluster-conflict-resolution)
+    - [Namespaced Mode Benefits](#namespaced-mode-benefits)
+  - [Component Architecture](#component-architecture)
+  - [Verification](#verification-5)
+
 - [Architectural Decisions & Component Analysis](#architectural-decisions--component-analysis)
   - [Volcano Batch Scheduler Analysis](#volcano-batch-scheduler-analysis)
   - [Bitnami Init Container Analysis](#bitnami-init-container-analysis)
@@ -505,6 +513,178 @@ NAME                            READY   STATUS    RESTARTS   AGE
 guardrail-pg-postgresql-0       1/1     Running   0          10m
 ```
 
+## Evaluator Component Deployment
+
+1. **Update values.yaml**:
+
+```yaml
+pvc:
+  storage_class: "gp3-csi"
+  volume_access_mode: ReadWriteOnce  # Not ReadWriteMany
+
+localPathProvisioner:
+  enabled: false  # Use EBS instead of local-path
+```
+
+2. **Configure for evaluator**:
+   ```yaml
+   # values.yaml
+   installation_namespace: <your-namespace>
+
+   install:
+     evaluator: yes
+     # Set all others to 'no' for standalone deployment
+   ```
+
+3. **Deploy**:
+   ```bash
+   ansible-playbook -c local -i localhost install.yaml
+   ```
+
+### Generated Files
+
+The playbook creates sensitive files that are git-ignored:
+- `evaluator-postgresql-values.yaml` - Helm values with PostgreSQL configuration
+- `secrets.yaml` - Evaluator PostgreSQL password
+- `argo-values.yaml` - Argo Workflows configuration with namespace-scoped permissions
+- `argo-sa.yaml` - Service account for workflow execution
+- `milvus-values.yaml` - Milvus vector database configuration
+- `opentelemetry-values.yaml` - OpenTelemetry collector configuration
+- `milvus-oc-rbac.yaml` - OpenShift RBAC for Milvus operations
+- `argo-validation.yaml` - Argo Workflows validation rules
+
+**Configuration Notes:**
+- **Database**: PostgreSQL backend (similar to other components)
+- **Vector Database**: Milvus for embeddings and similarity search
+- **Workflow Engine**: Argo Workflows for evaluation pipeline orchestration
+- **Observability**: OpenTelemetry for metrics and tracing
+- **Credentials**: Database and service account credentials auto-generated in secrets.yaml
+- **RBAC**: Namespace-scoped permissions only (enhanced security)
+
+### Argo Workflows Configuration
+
+The evaluator uses **Argo Workflows** for orchestrating evaluation pipelines. Special configuration was required for OpenShift compatibility and cluster safety.
+
+#### Cluster Conflict Resolution
+
+**Problem Encountered:**
+- Existing orphaned ClusterRoles from previous installations blocked deployment
+- CRD conflicts with Data Science Pipelines operator
+- Namespace ownership conflicts (`hacohen-nemo` vs `arhkp-nemo`)
+
+**Solution Implemented:**
+```yaml
+# argo-values.yaml configuration
+crds:
+  install: false  # Use existing CRDs from Data Science Pipelines operator
+
+singleNamespace: true  # Restrict to namespace-scoped resources only
+
+createAggregateRoles: false  # Disable cluster-wide aggregate roles
+
+# Disable cluster template access to avoid conflicts
+controller:
+  clusterWorkflowTemplates:
+    enabled: false
+
+server:
+  clusterWorkflowTemplates:
+    enabled: false
+```
+
+#### Namespaced Mode Benefits
+
+**Enhanced Security Model:**
+- **No ClusterRoles**: Uses namespace-scoped Roles only
+- **Zero Cluster Impact**: Cannot affect other namespaces or components
+- **Isolation**: Complete workflow isolation within evaluator namespace
+- **RBAC Precision**: Minimal required permissions only
+
+**Functional Impact Assessment:**
+```
+✅ Preserved: All workflow execution, templates, UI, artifacts
+✅ Enhanced: Security isolation, deployment safety, conflict avoidance
+⚠️ Limited: No access to ClusterWorkflowTemplates (not used by evaluator)
+```
+
+**Resource Creation Comparison:**
+```
+Standard Mode (Risky):        Namespaced Mode (Safe):
+├── 9 ClusterRoles           ├── 3 Roles (namespace-scoped)
+├── 4 ClusterRoleBindings    ├── 3 RoleBindings (namespace-scoped)
+└── Cluster-wide permissions └── Zero cluster impact
+```
+
+### Component Architecture
+
+The evaluator component deploys a comprehensive AI evaluation stack:
+
+**Core Components:**
+- **Argo Workflows Server & Controller**: Pipeline orchestration and workflow management
+- **PostgreSQL**: Metadata storage for evaluation results and configuration
+- **Milvus**: Vector database for embeddings, similarity search, and retrieval evaluation
+- **OpenTelemetry Collector**: Metrics collection and observability
+
+**Data Flow:**
+1. **Evaluation Requests** → Argo Workflows (pipeline orchestration)
+2. **Workflow Execution** → Milvus (vector operations) + PostgreSQL (metadata)
+3. **Metrics & Traces** → OpenTelemetry Collector
+4. **Results Storage** → PostgreSQL (structured data) + Milvus (embeddings)
+
+**Integration Points:**
+- **NGC Integration**: Pre-configured image pull secrets (`ngc-secret`, `nvcrimagepullsecret`)
+- **OpenShift Security**: Uses `anyuid` SCC for workflow pods
+- **Namespace Isolation**: All components operate within evaluator namespace only
+
+### Verification
+
+```bash
+# Check deployment status
+oc get pods -n <your-namespace>
+oc get pvc -n <your-namespace>
+
+# Verify PostgreSQL is running
+oc logs evaluator-pg-postgresql-0 -n <your-namespace>
+
+# Verify Argo Workflows components
+oc logs -l app.kubernetes.io/name=argo-workflows-server -n <your-namespace>
+oc logs -l app.kubernetes.io/name=argo-workflows-workflow-controller -n <your-namespace>
+
+# Verify Milvus vector database
+oc logs -l app.kubernetes.io/name=milvus -n <your-namespace>
+
+# Verify OpenTelemetry collector
+oc logs -l app.kubernetes.io/name=opentelemetry-collector -n <your-namespace>
+
+# Check Argo Workflows UI access
+oc port-forward svc/argo-workflows-server -n <your-namespace> 2746:2746
+# Then open https://localhost:2746
+```
+
+Expected output:
+```
+NAME                                           READY   STATUS    RESTARTS   AGE
+evaluator-pg-postgresql-0                      1/1     Running   0          10m
+argo-workflows-server-xxxxx                    1/1     Running   0          10m
+argo-workflows-workflow-controller-xxxxx       1/1     Running   0          10m
+milvus-xxxxx                                   1/1     Running   0          10m
+opentelemetry-collector-xxxxx                  1/1     Running   0          10m
+```
+
+**Post-Deployment Validation:**
+```bash
+# Test Argo Workflows functionality
+oc get workflows -n <your-namespace>
+oc get workflowtemplates -n <your-namespace>
+
+# Test Milvus connectivity (optional)
+oc exec -n <your-namespace> deployment/milvus -- curl -s localhost:19530/health
+
+# Verify service accounts and RBAC
+oc get serviceaccounts | grep argo-workflows
+oc get roles,rolebindings | grep argo-workflows
+```
+
 ## Architectural Decisions & Component Analysis
 
 This section documents the analysis and decisions made regarding component enablement/disablement for NVIDIA NIM Operator v3.0.0 compatibility and cluster safety.
@@ -667,6 +847,7 @@ postgresql:
 - **Core Infrastructure Services**: All dependency services (PostgreSQL, OpenTelemetry, MLflow) deployed and running
 - **MLflow Tracking**: Full experiment tracking with MinIO artifact storage
 - **Data Services**: Datastore, Entity-store, Customizer, Guardrail components deployed
+- **Evaluation Pipeline**: Evaluator with Argo Workflows, Milvus vector database, and namespace-scoped security
 - **Development Workflow**: Jupyter notebooks for AI/ML development
 - **Basic Functionality**: Infrastructure services operate as expected
 
@@ -745,8 +926,10 @@ oc patch storageclass local-path -p '{"metadata":{"annotations":{"storageclass.k
 
 - Based on NVIDIA NIM Operator v3.0.0
 - Tested on OpenShift 4.x with AWS EBS storage
-- PostgreSQL StatefulSet uses 500Mi EBS volume
+- PostgreSQL StatefulSet uses 500Mi EBS volume (per component)
 - Database credentials are auto-generated in `secrets.yaml`
+- Evaluator uses namespace-scoped Argo Workflows (enhanced security model)
+- All components support standalone deployment or combined installation
 
 ## Security Considerations
 
@@ -765,6 +948,14 @@ oc patch storageclass local-path -p '{"metadata":{"annotations":{"storageclass.k
 - [ ] Consider implementing proper authentication (OAuth, LDAP)
 - [ ] Review notebook access permissions
 - [ ] Enable HTTPS for production access
+
+**For Evaluator (Argo Workflows + Milvus):**
+- [ ] Review auto-generated evaluator database passwords in `secrets.yaml`
+- [ ] Configure Argo Workflows server authentication for production
+- [ ] Secure Milvus vector database access with proper authentication
+- [ ] Review workflow execution permissions and service account scope
+- [ ] Enable TLS for Argo Workflows server in production
+- [ ] Configure OpenTelemetry collector security for metrics collection
 
 **For All Components:**
 - [ ] Review auto-generated database passwords in `secrets.yaml`
