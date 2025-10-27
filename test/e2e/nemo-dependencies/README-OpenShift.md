@@ -879,6 +879,75 @@ Setup Complexity: Increased due to manual steps ⚠️
 
 ## Common Troubleshooting {#common-troubleshooting}
 
+### Evaluator-Specific Issues
+
+**Issue**: Evaluator PostgreSQL fails to deploy with template generation errors
+```bash
+# Error: Template file not found or configuration file not generated
+```
+- **Root Cause**: Copy-paste error in `/evaluator/tasks/postgresql.yaml` using wrong destination filename
+- **Symptoms**: `evaluator-postgresql-values.yaml` file not created, no `evaluator-pg` Helm release
+- **Solution**: Ensure `dest: evaluator-postgresql-values.yaml` (not `ds-postgresql-values.yaml`) in postgresql.yaml task file
+
+**Issue**: Evaluator OpenTelemetry deployment fails with version mismatch
+```bash
+# Error: Chart version conflicts or deployment timeout
+```
+- **Root Cause**: Evaluator uses outdated OpenTelemetry chart version `0.78.1` vs working `0.93.3`
+- **Solution**: Update `/evaluator/defaults/main.yml` to use `chart_version: "0.93.3"`
+
+**Issue**: MLflow PostgreSQL fails with non-existent image tag
+```bash
+# Error: initializing source docker://bitnami/postgresql:16.3.0-debian-12-r5: manifest unknown
+```
+- **Root Cause**: MLflow chart v1.0.6 defaults to non-existent PostgreSQL image tag
+- **Solution**: Add image override to `/customizer/templates/mlflow.yaml.j2`:
+```yaml
+postgresql:
+  enabled: true
+  image:
+    registry: registry-1.docker.io
+    repository: bitnami/postgresql
+    tag: latest
+```
+
+**Issue**: Evaluator OpenTelemetry pod crashes with configuration errors
+```bash
+# Error: unknown type: "zipkin" for id: "zipkin" (valid values: [nop otlp otlphttp file loadbalancing debug])
+```
+- **Root Cause**: OpenTelemetry collector doesn't support zipkin exporter in current version
+- **Solution**: Update `/evaluator/templates/opentelemetry-values.yaml.j2` with compatible configuration:
+```yaml
+mode: deployment
+image:
+  repository: "otel/opentelemetry-collector-k8s"
+  tag: "0.102.1"
+config:
+  exporters:
+    debug:
+      verbosity: detailed
+  # Remove zipkin exporter and incompatible processors
+```
+
+**Issue**: Milvus connectivity check fails on repeated deployments
+```bash
+# Error: pods "milvus-check" already exists
+```
+- **Root Cause**: Leftover pod from previous deployment attempts
+- **Solution**: Add cleanup step to `/evaluator/tasks/milvus.yaml`:
+```yaml
+- name: Clean up any existing milvus-check pod
+  command: kubectl delete pod milvus-check -n {{ namespace }} --ignore-not-found=true
+  changed_when: false
+```
+
+**Issue**: OpenTelemetry template missing required image configuration
+```bash
+# Error: 'image.repository' must be set
+```
+- **Root Cause**: Evaluator OpenTelemetry template lacks image specification that other components have
+- **Solution**: Add image configuration to `/evaluator/templates/opentelemetry-values.yaml.j2`
+
 ### MLflow-Specific Issues
 
 **Issue**: MinIO provisioning job fails with "wait-for-available-minio" error

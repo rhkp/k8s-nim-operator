@@ -28,7 +28,7 @@ opentelemetry:
   helm_repo_name: "open-telemetry"
   helm_repo_url: "https://open-telemetry.github.io/opentelemetry-helm-charts"
   chart_name: "open-telemetry/opentelemetry-collector"
-  chart_version: "0.78.1"
+  chart_version: "0.93.3"
 
 # Zipkin Helm chart details
 zipkin:

@@ -1,44 +1,32 @@
 mode: deployment
+image:
+  repository: "otel/opentelemetry-collector-k8s"
+  tag: "0.102.1"
 config:
   receivers:
     otlp:
       protocols:
+        grpc: {}
         http:
           cors:
             allowed_origins:
               - "*"
   exporters:
-    # NOTE: Prior to v0.86.0 use `logging` instead of `debug`.
-    zipkin:
-      endpoint: "http://zipkin:9411/api/v2/spans"
     debug:
       verbosity: detailed
+  extensions:
+    health_check: {}
+    zpages:
+      endpoint: 0.0.0.0:55679
   processors:
-    batch:  {}
-    tail_sampling:
-      # filter out health checks
-      # https://github.com/open-telemetry/opentelemetry-collector/issues/2310#issuecomment-1268157484
-      policies:
-        - name: drop_noisy_traces_url
-          type: string_attribute
-          string_attribute:
-            key: http.target
-            values:
-              - \/health
-            enabled_regex_matching: true
-            invert_match: true
-    transform:
-      trace_statements:
-        - context: span
-          statements:
-            - set(status.code, 1) where attributes["http.path"] == "/health"
-            # here, you can add code to replace span names or attributes for your own needs.
+    batch: {}
   service:
+    extensions: [zpages, health_check]
     pipelines:
       traces:
         receivers: [otlp]
-        exporters: [debug, zipkin]
-        processors: [tail_sampling, transform]
+        exporters: [debug]
+        processors: [batch]
       metrics:
         receivers: [otlp]
         exporters: [debug]

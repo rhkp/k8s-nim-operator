@@ -2,14 +2,14 @@
 - name: Template values file
   ansible.builtin.template:
     src: postgresql-values.yaml.j2
-    dest: ds-postgresql-values.yaml
+    dest: evaluator-postgresql-values.yaml
 
 - name: Install PostgreSQL Helm chart
   shell: >
     helm upgrade --install {{ postgresql.helm_release_name}}
     {{ postgresql.helm_oci_registry }} 
     --namespace {{ namespace }}
-    -f ds-postgresql-values.yaml
+    -f evaluator-postgresql-values.yaml
   register: helm_install_result
   changed_when: "'STATUS: deployed' in helm_install_result.stdout"
 
