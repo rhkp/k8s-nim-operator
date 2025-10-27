@@ -42,6 +42,14 @@ Quick guide for deploying NVIDIA NIM Operator E2E test dependencies on OpenShift
   - [Component Architecture](#component-architecture)
   - [Verification](#verification-5)
 
+- [NeMo Operator Installation](#nemo-operator-installation)
+  - [Prerequisites](#nemo-operator-prerequisites)
+  - [Volcano Scheduler Installation](#volcano-scheduler-installation)
+  - [NeMo Operator Deployment](#nemo-operator-deployment)
+  - [NEMO Resources Deployment](#nemo-resources-deployment)
+  - [Verification](#nemo-operator-verification)
+  - [Troubleshooting NeMo Operator](#troubleshooting-nemo-operator)
+
 - [Architectural Decisions & Component Analysis](#architectural-decisions--component-analysis)
   - [Volcano Batch Scheduler Analysis](#volcano-batch-scheduler-analysis)
   - [Bitnami Init Container Analysis](#bitnami-init-container-analysis)
@@ -570,7 +578,7 @@ The evaluator uses **Argo Workflows** for orchestrating evaluation pipelines. Sp
 **Problem Encountered:**
 - Existing orphaned ClusterRoles from previous installations blocked deployment
 - CRD conflicts with Data Science Pipelines operator
-- Namespace ownership conflicts (`hacohen-nemo` vs `arhkp-nemo`)
+- Namespace ownership conflicts (`<some-namespace>` vs `<your-namespace>`)
 
 **Solution Implemented:**
 ```yaml
@@ -684,6 +692,318 @@ oc exec -n <your-namespace> deployment/milvus -- curl -s localhost:19530/health
 oc get serviceaccounts | grep argo-workflows
 oc get roles,rolebindings | grep argo-workflows
 ```
+
+## NeMo Operator Installation
+
+The NVIDIA NeMo Operator enables training and deployment of Large Language Models (LLMs) on Kubernetes. This section covers installing the operator in the `<your-namespace>` namespace with namespace-scoped volcano scheduler for enhanced cluster safety.
+
+### Prerequisites {#nemo-operator-prerequisites}
+
+Before installing the NeMo Operator, ensure you have:
+
+1. **NGC API Key**: Valid NVIDIA GPU Cloud API key for accessing NeMo operator images
+2. **OpenShift Cluster**: With sufficient GPU nodes for training workloads
+3. **Namespace**: Use existing `<your-namespace>` namespace (already created for dependencies)
+   - Replace `<your-namespace>` with your actual namespace name throughout this guide
+4. **Dependencies Deployed**: All NEMO dependencies (datastore, entity-store, customizer, etc.) should be operational
+5. **Helm**: Helm 3.x installed and configured
+
+**NGC Credentials Setup:**
+```bash
+# Create NGC API secret for operator authentication
+oc create secret generic ngc-api-secret \
+  --from-literal=NGC_API_KEY=<YOUR_NGC_API_KEY> \
+  -n <your-namespace>
+
+# Create NGC image pull secret
+oc create secret docker-registry ngc-secret \
+  --docker-server=nvcr.io \
+  --docker-username='$oauthtoken' \
+  --docker-password=<YOUR_NGC_API_KEY> \
+  -n <your-namespace>
+```
+
+### Volcano Scheduler Installation
+
+The NeMo Operator requires volcano scheduler for distributed training workloads. We install it with namespace-scoped webhook selectors to minimize cluster-wide impact.
+
+1. **Install Volcano CRDs First** (Cluster-scoped requirement):
+   ```bash
+   # Install volcano CRDs only
+   helm repo add volcano-sh https://volcano-sh.github.io/helm-charts
+   helm repo update
+
+   # Install CRDs without the scheduler components
+   oc apply -f https://raw.githubusercontent.com/volcano-sh/volcano/master/installer/volcano-development.yaml --dry-run=client -o yaml | grep -A1000 "kind: CustomResourceDefinition" | oc apply -f -
+   ```
+
+2. **Configure Namespace-Scoped Volcano**:
+
+   Create `volcano-values.yaml`:
+   ```yaml
+   custom:
+     admission_enable: true
+     controller_enable: true
+     scheduler_enable: true
+     webhooks_namespace_selector_expressions:
+       - key: "kubernetes.io/metadata.name"
+         operator: "In"
+         values:
+           - "<your-namespace>"
+   ```
+
+3. **Deploy Volcano with Namespace Targeting**:
+   ```bash
+   # Install volcano with namespace-scoped webhook configuration
+   helm install volcano volcano-sh/volcano \
+     -n volcano-system \
+     --create-namespace \
+     -f volcano-values.yaml
+   ```
+
+4. **Verification**:
+   ```bash
+   # Check volcano components
+   oc get pods -n volcano-system
+
+   # Verify webhook is targeting our namespace
+   oc get validatingwebhookconfiguration volcano-admission-webhook -o yaml | grep -A5 namespaceSelector
+   ```
+
+   Expected output:
+   ```
+   NAME                                READY   STATUS    RESTARTS   AGE
+   volcano-admission-xxx               1/1     Running   0          2m
+   volcano-controller-xxx              1/1     Running   0          2m
+   volcano-scheduler-xxx               1/1     Running   0          2m
+   ```
+
+### NeMo Operator Deployment
+
+1. **Add NVIDIA Helm Repository**:
+   ```bash
+   helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+   helm repo update
+   ```
+
+2. **Deploy NeMo Operator**:
+   ```bash
+   # Install NVIDIA NeMo Operator in AllNamespaces mode (required)
+   helm install nemo-operator nvidia/nemo-operator \
+     -n nemo-operator-system \
+     --create-namespace \
+     --set image.repository=nvcr.io/nvidia/nemo-operator \
+     --set image.tag=25.08 \
+     --set imagePullSecrets[0].name=ngc-secret \
+     --wait --timeout=300s
+   ```
+
+3. **Verify Operator Installation**:
+   ```bash
+   # Check operator deployment
+   oc get pods -n nemo-operator-system
+
+   # Verify Custom Resource Definitions
+   oc get crd | grep nemo
+
+   # Check operator logs
+   oc logs -n nemo-operator-system deployment/nemo-operator-controller-manager
+   ```
+
+   Expected CRDs:
+   ```
+   nemocaches.apps.nvidia.com
+   nemocustomizers.apps.nvidia.com
+   nemodatastores.apps.nvidia.com
+   nemoentitystores.apps.nvidia.com
+   nemoevaluators.apps.nvidia.com
+   nemoguardrails.apps.nvidia.com
+   nimcaches.apps.nvidia.com
+   nimpipelines.apps.nvidia.com
+   ```
+
+### NEMO Resources Deployment
+
+1. **Apply NEMO Custom Resources**:
+   ```bash
+   # Deploy all NEMO resources using the sample configuration
+   # Note: Update the namespace references in your YAML file to match <your-namespace>
+   oc apply -f /tmp/modified_samples.yaml
+   ```
+
+   This deploys:
+   - **NemoCustomizer**: Fine-tuning and customization API service
+   - **NemoDatastore**: Data management and storage service
+   - **NemoEntitystore**: Entity and model metadata management
+   - **NemoEvaluator**: Model evaluation and benchmarking service
+   - **NemoGuardrail**: Safety and content filtering service
+   - **NIMCache**: Model caching for inference optimization
+   - **NIMPipeline**: Inference pipeline for Llama 3.2 1B Instruct model
+
+2. **Monitor Resource Creation**:
+   ```bash
+   # Check NEMO custom resources
+   oc get nemocustomizer,nemodatastore,nemoentitystore,nemoevaluator,nemoguardrail -n <your-namespace>
+
+   # Check NIM resources
+   oc get nimcache,nimpipeline -n <your-namespace>
+
+   # Monitor pod creation
+   watch oc get pods -n <your-namespace>
+   ```
+
+### Verification {#nemo-operator-verification}
+
+**Complete System Verification:**
+
+1. **Check All NEMO Resources**:
+   ```bash
+   # Verify all custom resources are created
+   oc get nemocustomizer nemocustomizer-sample -n <your-namespace> -o yaml
+   oc get nemodatastore nemodatastore-sample -n <your-namespace> -o yaml
+   oc get nemoentitystore nemoentitystore-sample -n <your-namespace> -o yaml
+   oc get nemoevaluator nemoevaluator-sample -n <your-namespace> -o yaml
+   oc get nemoguardrail nemoguardrails-sample -n <your-namespace> -o yaml
+   ```
+
+2. **Verify Infrastructure Services**:
+   ```bash
+   # Check all dependency pods are running
+   oc get pods -n <your-namespace> | grep -E "(postgresql|opentelemetry|mlflow|argo|milvus)"
+
+   # Verify database connectivity
+   oc exec datastore-pg-postgresql-0 -n <your-namespace> -- pg_isready
+   oc exec entity-store-pg-postgresql-0 -n <your-namespace> -- pg_isready
+   oc exec customizer-pg-postgresql-0 -n <your-namespace> -- pg_isready
+   oc exec evaluator-pg-postgresql-0 -n <your-namespace> -- pg_isready
+   oc exec guardrail-pg-postgresql-0 -n <your-namespace> -- pg_isready
+   ```
+
+3. **Test NEMO Service Endpoints**:
+   ```bash
+   # Port forward to test services locally
+   oc port-forward svc/nemodatastore-sample -n <your-namespace> 8000:8000 &
+   curl -X GET http://localhost:8000/health
+
+   oc port-forward svc/nemoentitystore-sample -n <your-namespace> 8001:8000 &
+   curl -X GET http://localhost:8001/health
+
+   oc port-forward svc/nemocustomizer-sample -n <your-namespace> 8002:8000 &
+   curl -X GET http://localhost:8002/health
+   ```
+
+4. **Verify NIM Pipeline**:
+   ```bash
+   # Check NIM cache status
+   oc get nimcache meta-llama3-1b-instruct -n <your-namespace> -o jsonpath='{.status.state}'
+
+   # Check NIM pipeline status
+   oc get nimpipeline llama3-1b-pipeline -n <your-namespace> -o jsonpath='{.status.state}'
+
+   # Test inference endpoint when ready
+   oc port-forward svc/meta-llama3-1b-instruct -n <your-namespace> 8080:8000 &
+   curl -X POST http://localhost:8080/v1/completions \
+     -H "Content-Type: application/json" \
+     -d '{"model": "meta/llama-3.2-1b-instruct", "prompt": "Hello", "max_tokens": 10}'
+   ```
+
+**Expected Final State:**
+```bash
+# All components should be running
+NAME                                           READY   STATUS    RESTARTS   AGE
+datastore-pg-postgresql-0                      1/1     Running   0          45m
+entity-store-pg-postgresql-0                   1/1     Running   0          40m
+customizer-pg-postgresql-0                     1/1     Running   0          35m
+evaluator-pg-postgresql-0                      1/1     Running   0          30m
+guardrail-pg-postgresql-0                      1/1     Running   0          25m
+argo-workflows-server-xxx                      1/1     Running   0          30m
+argo-workflows-workflow-controller-xxx         1/1     Running   0          30m
+milvus-xxx                                     1/1     Running   0          30m
+mlflow-tracking-xxx                            1/1     Running   0          35m
+mlflow-minio-xxx                               1/1     Running   0          35m
+opentelemetry-collector-xxx                    1/1     Running   0          30m
+jupyter-notebook-xxx                           1/1     Running   0          20m
+nemocustomizer-sample-xxx                      1/1     Running   0          15m
+nemodatastore-sample-xxx                       1/1     Running   0          15m
+nemoentitystore-sample-xxx                     1/1     Running   0          15m
+nemoevaluator-sample-xxx                       1/1     Running   0          15m
+nemoguardrails-sample-xxx                      1/1     Running   0          15m
+meta-llama3-1b-instruct-xxx                    1/1     Running   0          10m
+```
+
+### Troubleshooting NeMo Operator
+
+**Common NeMo Operator Issues:**
+
+**Issue**: NeMo Operator pods stuck in ImagePullBackOff
+```bash
+# Error: Failed to pull image "nvcr.io/nvidia/nemo-operator:25.08"
+```
+- **Root Cause**: Missing or incorrect NGC credentials
+- **Solution**: Verify NGC secrets are correctly created and contain valid API key:
+```bash
+oc get secret ngc-secret -n nemo-operator-system -o yaml
+oc get secret ngc-api-secret -n <your-namespace> -o yaml
+```
+
+**Issue**: Volcano webhook affecting cluster-wide pod creation
+```bash
+# Error: admission webhook "volcano-admission-webhook" denied the request
+```
+- **Root Cause**: Volcano webhook misconfigured for cluster-wide operation
+- **Solution**: Verify namespace selector in webhook configuration:
+```bash
+oc get validatingwebhookconfiguration volcano-admission-webhook -o yaml | grep -A10 namespaceSelector
+```
+
+**Issue**: NEMO resources stuck in "Pending" state
+```bash
+# Custom resources created but no pods appear
+```
+- **Root Cause**: Missing dependencies or operator not watching namespace
+- **Solution**:
+  1. Check operator logs: `oc logs -n nemo-operator-system deployment/nemo-operator-controller-manager`
+  2. Verify all prerequisite services are running
+  3. Check RBAC permissions for service accounts
+
+**Issue**: NIM Pipeline fails to start inference service
+```bash
+# Error: Failed to mount NIM cache volume
+```
+- **Root Cause**: NIMCache not fully populated or storage issues
+- **Solution**:
+  1. Check NIMCache status: `oc get nimcache meta-llama3-1b-instruct -n <your-namespace> -o yaml`
+  2. Verify storage class and PVC creation: `oc get pvc -n <your-namespace>`
+  3. Monitor cache population: `oc logs -f <nimcache-pod> -n <your-namespace>`
+
+**Issue**: Training jobs fail with volcano scheduler errors
+```bash
+# Error: volcano.batch/v1alpha1, Kind=Job
+```
+- **Root Cause**: Volcano CRDs not installed or incompatible version
+- **Solution**:
+  1. Verify volcano CRDs: `oc get crd | grep volcano`
+  2. Check volcano controller logs: `oc logs -n volcano-system deployment/volcano-controller`
+  3. Ensure volcano is properly scoped to <your-namespace> namespace
+
+**Performance Considerations:**
+
+- **GPU Resources**: Ensure sufficient GPU nodes for training workloads
+- **Storage**: Use high-performance storage classes (e.g., gp3-csi) for model caching
+- **Networking**: Verify InfiniBand/high-speed networking for multi-node training
+- **Memory**: Training jobs require significant memory - monitor node resource availability
+
+**Security Notes:**
+
+⚠️ **IMPORTANT**: Replace `<YOUR_NGC_API_KEY>` with your actual NGC API key. The API key should be rotated regularly in production environments.
+
+**Production Security Checklist:**
+- [ ] Rotate NGC API keys regularly
+- [ ] Use Kubernetes secrets with proper RBAC
+- [ ] Enable TLS for all service communications
+- [ ] Review volcano webhook scope and permissions
+- [ ] Implement network policies for service isolation
+- [ ] Monitor operator logs for security events
 
 ## Architectural Decisions & Component Analysis
 

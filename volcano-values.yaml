@@ -1,0 +1,9 @@
+custom:
+  admission_enable: true
+  controller_enable: true
+  scheduler_enable: true
+  webhooks_namespace_selector_expressions:
+    - key: "kubernetes.io/metadata.name"
+      operator: "In"
+      values:
+        - "<your-namespace>"
