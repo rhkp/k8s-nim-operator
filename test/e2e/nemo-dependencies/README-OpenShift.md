@@ -1031,6 +1031,32 @@ helm upgrade k8s-nim-operator nvidia/k8s-nim-operator \
   --set manager.resources.requests.memory=256Mi
 ```
 
+**Issue**: NIM Operator Excessive Restarts (Cluster Health Related)
+```bash
+# Symptoms: Multiple restarts vs stable behavior on other clusters
+k8s-nim-operator-xxxxx   0/1   CrashLoopBackOff   6+   10m
+```
+- **Root Cause**: Cluster-level health issues affecting operator stability
+- **Diagnosis Commands**:
+```bash
+# Check overall cluster health
+oc get clusterversion
+oc get co | grep DEGRADED
+oc get nodes | grep -E "(NotReady|SchedulingDisabled)"
+```
+- **Known Problematic Configurations**:
+  - OpenShift 4.18.x with degraded cluster operators
+  - Kubernetes v1.31.x with machine-config operator in DEGRADED state
+  - Clusters with nodes in NotReady/SchedulingDisabled status
+- **Verified Working Configurations**:
+  - OpenShift 4.19+ / Kubernetes v1.32+
+  - All cluster operators healthy (no DEGRADED status)
+  - All nodes in Ready state
+- **Solutions**:
+  - **Preferred**: Use healthy clusters with recent OpenShift/Kubernetes versions
+  - **Workaround**: Accept restart behavior as operational (services may still function)
+  - **Investigation**: Review cluster upgrade path if operator stability is critical
+
 **Issue**: NEMO services show "NotReady" status
 ```bash
 # Services created but not ready
