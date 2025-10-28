@@ -55,6 +55,16 @@ Quick guide for deploying NVIDIA NIM Operator E2E test dependencies on OpenShift
   - [Verification](#nim-operator-verification)
   - [Troubleshooting NIM Operator](#troubleshooting-nim-operator)
 
+- [NEMO Microservices Verification](#nemo-microservices-verification)
+  - [Overview](#overview)
+  - [Step 1: Check NEMO Microservices Status](#step-1-check-nemo-microservices-status)
+  - [Step 2: Verify ConfigMaps](#step-2-verify-configmaps)
+  - [Step 3: Check NIM Services Status](#step-3-check-nim-services-status)
+  - [Step 4: Verify Service Endpoints](#step-4-verify-service-endpoints)
+  - [Step 5: Test API Endpoints](#step-5-test-api-endpoints)
+  - [Verification Summary](#verification-summary)
+  - [Troubleshooting Verification Issues](#troubleshooting-verification-issues)
+
 - [Architectural Decisions & Component Analysis](#architectural-decisions--component-analysis)
   - [Volcano Batch Scheduler Analysis](#volcano-batch-scheduler-analysis)
   - [Bitnami Init Container Analysis](#bitnami-init-container-analysis)
@@ -1113,6 +1123,211 @@ oc get pods -n <your-namespace> | grep postgresql
 - Configure authentication and authorization for production workloads
 - Set up monitoring and alerting for NEMO service health
 - Regular backup of PostgreSQL databases and MLflow artifacts
+
+## NEMO Microservices Verification
+
+This section provides comprehensive verification steps to ensure all NEMO microservices are operational according to NVIDIA's official documentation standards.
+
+### Overview
+
+Following deployment of the NIM Operator and NEMO samples, perform these verification steps to confirm the complete NVIDIA NEMO ecosystem is functioning correctly:
+
+1. **NEMO Microservices Status Check**
+2. **ConfigMaps Verification**
+3. **NIM Services Status Check**
+4. **Service Endpoints Verification**
+5. **API Endpoints Testing**
+
+### Step 1: Check NEMO Microservices Status
+
+Verify all NEMO microservices show `Ready` status:
+
+```bash
+oc get -n <your-namespace> nemoentitystore,nemodatastore,nemoguardrails,nemocustomizer,nemoevaluator
+```
+
+**Expected Output:**
+```
+NAME                                                     STATUS   AGE
+nemoentitystore.apps.nvidia.com/nemoentitystore-sample   Ready    22h
+nemodatastore.apps.nvidia.com/nemodatastore-sample       Ready    22h
+nemoguardrail.apps.nvidia.com/nemoguardrails-sample      Ready    22h
+nemocustomizer.apps.nvidia.com/nemocustomizer-sample     Ready    22h
+nemoevaluator.apps.nvidia.com/nemoevaluator-sample       Ready    22h
+```
+
+**✅ Success Criteria:** All 5 NEMO microservices showing `STATUS: Ready`
+
+### Step 2: Verify ConfigMaps
+
+Check for NEMO-related ConfigMaps:
+
+```bash
+oc get -n <your-namespace> configmap | grep "nemo"
+```
+
+**Expected Output:**
+```
+nemo-model-config                              2      22h
+nemo-training-config                           1      22h
+nemocustomizer-sample                          1      22h
+```
+
+**✅ Success Criteria:** All expected ConfigMaps present with data entries
+
+### Step 3: Check NIM Services Status
+
+Verify NIM Pipeline, Cache, and Service components:
+
+```bash
+oc get -n <your-namespace> nimpipeline,nimcache,nimservice
+```
+
+**Expected Output:**
+```
+NAME                                             STATUS   AGE
+nimpipeline.apps.nvidia.com/llama3-1b-pipeline   Ready    22h
+
+NAME                                               STATUS   PVC                           AGE
+nimcache.apps.nvidia.com/meta-llama3-1b-instruct   Ready    meta-llama3-1b-instruct-pvc   22h
+
+NAME                                                 STATUS   AGE
+nimservice.apps.nvidia.com/meta-llama3-1b-instruct   Ready    22h
+```
+
+**✅ Success Criteria:** All NIM components showing `STATUS: Ready`
+
+### Step 4: Verify Service Endpoints
+
+Check that all services have proper ClusterIP endpoints:
+
+```bash
+# Check NEMO microservices
+oc get services -n <your-namespace> | grep "nemo"
+
+# Check NIM inference service
+oc get services -n <your-namespace> | grep "meta-llama3-1b-instruct"
+```
+
+**Expected Output:**
+```
+# NEMO Microservices (all on port 8000/TCP)
+nemocustomizer-sample                     ClusterIP   172.30.134.54    <none>        8000/TCP,9009/TCP
+nemodatastore-sample                      ClusterIP   172.30.89.50     <none>        8000/TCP
+nemoentitystore-sample                    ClusterIP   172.30.232.110   <none>        8000/TCP
+nemoevaluator-sample                      ClusterIP   172.30.4.133     <none>        8000/TCP
+nemoguardrails-sample                     ClusterIP   172.30.82.148    <none>        8000/TCP
+
+# NIM Inference Service
+meta-llama3-1b-instruct                   ClusterIP   172.30.62.18     <none>        8000/TCP
+```
+
+**✅ Success Criteria:** All services properly exposed with ClusterIP endpoints on port 8000
+
+### Step 5: Test API Endpoints
+
+Test each microservice API to verify functionality. Create temporary test pods to validate API responses:
+
+#### Test NeMo Customizer API
+
+```bash
+oc run test-nemo-customizer --image=curlimages/curl:latest -n <your-namespace> --restart=Never -- curl -X GET "http://nemocustomizer-sample.<your-namespace>:8000/v1/customization/configs"
+
+# Get results and cleanup
+sleep 5 && oc logs test-nemo-customizer -n <your-namespace> && oc delete pod test-nemo-customizer -n <your-namespace>
+```
+
+**Expected:** JSON response with customization configurations for available models (llama-3.2-1b, llama-3.1-8b with training options)
+
+#### Test NeMo Entity Store API
+
+```bash
+oc run test-nemo-entitystore --image=curlimages/curl:latest -n <your-namespace> --restart=Never -- curl -X GET "http://nemoentitystore-sample.<your-namespace>:8000/v1/base-urls"
+
+# Get results and cleanup
+sleep 5 && oc logs test-nemo-entitystore -n <your-namespace> && oc delete pod test-nemo-entitystore -n <your-namespace>
+```
+
+**Expected:** JSON response with datastore base URLs
+
+#### Test NeMo Data Store API
+
+```bash
+oc run test-nemo-datastore --image=curlimages/curl:latest -n <your-namespace> --restart=Never -- curl -X GET "http://nemodatastore-sample.<your-namespace>:8000/v1/hf/api/datasets"
+
+# Get results and cleanup
+sleep 5 && oc logs test-nemo-datastore -n <your-namespace> && oc delete pod test-nemo-datastore -n <your-namespace>
+```
+
+**Expected:** JSON array (empty `[]` if no datasets configured)
+
+#### Test NeMo Guardrails API
+
+```bash
+oc run test-nemo-guardrails --image=curlimages/curl:latest -n <your-namespace> --restart=Never -- curl -X GET "http://nemoguardrails-sample.<your-namespace>:8000/v1/guardrail/configs"
+
+# Get results and cleanup
+sleep 5 && oc logs test-nemo-guardrails -n <your-namespace> && oc delete pod test-nemo-guardrails -n <your-namespace>
+```
+
+**Expected:** JSON response with pagination structure (empty data array if no guardrails configured)
+
+#### Test NeMo Evaluator API
+
+```bash
+oc run test-nemo-evaluator --image=curlimages/curl:latest -n <your-namespace> --restart=Never -- curl -X GET "http://nemoevaluator-sample.<your-namespace>:8000/v1/evaluation/configs"
+
+# Get results and cleanup
+sleep 5 && oc logs test-nemo-evaluator -n <your-namespace> && oc delete pod test-nemo-evaluator -n <your-namespace>
+```
+
+**Expected:** JSON response with pagination structure (empty data array if no evaluation configs)
+
+#### Test NIM Inference Service
+
+```bash
+oc run test-nim-service --image=curlimages/curl:latest -n <your-namespace> --restart=Never -- curl -X GET "http://meta-llama3-1b-instruct.<your-namespace>:8000/v1/health/ready"
+
+# Get results and cleanup
+sleep 5 && oc logs test-nim-service -n <your-namespace> && oc delete pod test-nim-service -n <your-namespace>
+```
+
+**Expected:** `{"object":"health.response","message":"Service is ready."}`
+
+### Verification Summary
+
+**✅ Complete Success Criteria:**
+
+| Component | Verification | Expected Result |
+|-----------|-------------|-----------------|
+| **NEMO Microservices** | Status check | 5 services showing `Ready` |
+| **ConfigMaps** | Resource check | 3 ConfigMaps with proper data |
+| **NIM Services** | Status check | Pipeline, Cache, Service all `Ready` |
+| **Service Endpoints** | Network check | All services on ClusterIP:8000 |
+| **API Functionality** | HTTP requests | All APIs responding with valid JSON |
+
+**🚀 Deployment Status: FULLY OPERATIONAL**
+
+When all verification steps pass, the complete NVIDIA NEMO ecosystem is successfully deployed and ready for:
+- **Model Training & Fine-tuning** (Customizer)
+- **Data Management** (Datastore & Entity Store)
+- **Model Evaluation** (Evaluator)
+- **Safety & Content Filtering** (Guardrails)
+- **Production Inference** (NIM Service)
+
+### Troubleshooting Verification Issues
+
+**Issue**: Services show `NotReady` status
+- **Check**: Pod logs for specific errors: `oc logs -l app.kubernetes.io/name=<service-name> -n <your-namespace>`
+- **Verify**: All infrastructure dependencies (PostgreSQL, MLflow, etc.) are running
+
+**Issue**: API tests fail with connection refused
+- **Check**: Service endpoints: `oc get svc -n <your-namespace>`
+- **Verify**: Pods are Running: `oc get pods -n <your-namespace>`
+
+**Issue**: GPU-dependent services pending
+- **Expected**: NIM cache/service may remain pending without GPU nodes
+- **Solution**: Ensure GPU nodes have proper tolerations (see GPU scheduling fixes in troubleshooting)
 
 ## Architectural Decisions & Component Analysis
 
