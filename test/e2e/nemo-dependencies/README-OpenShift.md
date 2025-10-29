@@ -983,20 +983,20 @@ oc get pods -n <your-namespace> | grep -E "(postgresql|opentelemetry|mlflow|argo
      -n <your-namespace>
    ```
 
-2. **Add NVIDIA Helm Repository**:
+2. **Use OpenShift-Specific Helm Chart**:
    ```bash
-   helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
-   helm repo update
+   # CRITICAL: OpenShift requires the local Helm chart from deploy-v3.0-on-openshift branch
+   # The official NVIDIA Helm repository chart is NOT compatible with OpenShift
+   cd /tmp/k8s-nim-operator/test/e2e/nemo-dependencies
    ```
 
-3. **Install NIM Operator v3.0.1**:
+3. **Install NIM Operator v3.0.1 (OpenShift-Compatible)**:
    ```bash
-   # Install NIM Operator with namespace scoping (critical for OpenShift stability)
-   helm install k8s-nim-operator nvidia/k8s-nim-operator \
+   # Install NIM Operator using OpenShift-specific Helm chart
+   helm install k8s-nim-operator /tmp/k8s-nim-operator/deployments/helm/k8s-nim-operator \
      -n <your-namespace> \
-     --set manager.resources.limits.memory=1Gi \
-     --set manager.resources.requests.memory=512Mi \
-     --set manager.env.WATCH_NAMESPACE=<your-namespace> \
+     --set operator.resources.limits.memory=512Mi \
+     --set operator.resources.requests.memory=256Mi \
      --wait --timeout=300s
    ```
 

@@ -1,0 +1,363 @@
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NemoCustomizer
+metadata:
+  name: nemocustomizer-sample
+  namespace: arhkp-nemo
+spec:
+  # Scheduler configuration for training jobs (volcano (default))
+  scheduler:
+    type: "volcano"
+  # Weights & Biases configuration for experiment tracking
+  wandb:
+    secretName: wandb-secret       # Kubernetes secret that stores WANDB_API_KEY and optionally encryption key
+    apiKeyKey: apiKey                 # Key in the secret that holds the W&B API key
+    encryptionKey: encryptionKey   # Key in the secret that holds optional encryption key
+  # OpenTelemetry tracing configuration
+  otel:
+    enabled: true
+    exporterOtlpEndpoint: http://customizer-otel-opentelemetry-collector.nemo.svc.cluster.local:4317
+  # PostgreSQL database connection configuration
+  databaseConfig:
+    credentials:
+      user: ncsuser                        # Database username
+      secretName: customizer-pg-existing-secret  # Secret containing password
+      passwordKey: password               # Key inside secret that contains the password
+    host: customizer-pg-postgresql.nemo.svc.cluster.local
+    port: 5432
+    databaseName: ncsdb
+  # Customizer API service exposure settings
+  expose:
+    service:
+      type: ClusterIP
+      port: 8000
+  # Global image pull settings used in various subcomponents
+  image:
+    repository: nvcr.io/nvidia/nemo-microservices/customizer-api
+    tag: "25.08"
+    pullPolicy: IfNotPresent
+    pullSecrets:
+      - ngc-secret
+  # URL to the NeMo Entity Store microservice
+  entitystore:
+    endpoint: http://nemoentitystore-sample.nemo.svc.cluster.local:8000
+  # URL to the NeMo Data Store microservice
+  datastore:
+    endpoint: http://nemodatastore-sample.nemo.svc.cluster.local:8000
+  # URL for MLflow tracking server
+  mlflow: 
+    endpoint: http://mlflow-tracking.nemo.svc.cluster.local:80
+  # Configuration for the data store CLI tools
+  nemoDatastoreTools:
+    image: nvcr.io/nvidia/nemo-microservices/nds-v2-huggingface-cli:25.08
+  # Configuration for model download jobs
+  modelDownloadJobs:
+    image: "nvcr.io/nvidia/nemo-microservices/customizer-api:25.08"
+    ngcAPISecret:
+      # Secret that stores NGC API key
+      name: ngc-api-secret
+      # Key inside secret         
+      key: "NGC_API_KEY"                 
+    securityContext:
+      fsGroup: 1000
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+     # Time (in seconds) to retain job after completion
+    ttlSecondsAfterFinished: 600   
+    # Polling frequency to check job status     
+    pollIntervalSeconds: 15              
+  # Name to the ConfigMap containing model definitions
+  modelConfig:
+    name: nemo-model-config
+  # Training configuration
+  trainingConfig:
+    configMap:
+      # Optional: Additional configuration to merge into training config
+      name: nemo-training-config         
+    # PVC where model artifacts are cached or used during training
+    modelPVC:
+      create: true
+      name: finetuning-ms-models-pvc
+      # StorageClass for the PVC (can be empty to use default)
+      storageClass: ""
+      volumeAccessMode: ReadWriteOnce
+      size: 50Gi
+    # Workspace PVC automatically created per job
+    workspacePVC:
+      storageClass: "local-path"
+      volumeAccessMode: ReadWriteOnce
+      size: 10Gi
+      # Mount path for workspace inside container
+      mountPath: /pvc/workspace          
+    image:
+      repository: nvcr.io/nvidia/nemo-microservices/customizer
+      tag: "25.08"
+    env:
+      - name: LOG_LEVEL
+        value: INFO                    
+    # Multi-node networking environment variables for training (CSPs)
+    networkConfig:
+      - name: NCCL_IB_SL
+        value: "0"
+      - name: NCCL_IB_TC
+        value: "41"
+      - name: NCCL_IB_QPS_PER_CONNECTION
+        value: "4"
+      - name: UCX_TLS
+        value: TCP
+      - name: UCX_NET_DEVICES
+        value: eth0
+      - name: HCOLL_ENABLE_MCAST_ALL
+        value: "0"
+      - name: NCCL_IB_GID_INDEX
+        value: "3"
+    # TTL for training job after it completes
+    ttlSecondsAfterFinished: 3600       
+    # Timeout duration (in seconds) for training job
+    timeout: 3600                       
+    # Node tolerations
+    tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NemoDatastore
+metadata:
+  name: nemodatastore-sample
+  namespace: arhkp-nemo
+spec:
+  secrets:
+    datastoreConfigSecret: "nemo-ms-nemo-datastore"
+    datastoreInitSecret: "nemo-ms-nemo-datastore-init"
+    datastoreInlineConfigSecret: "nemo-ms-nemo-datastore-inline-config"
+    giteaAdminSecret: "gitea-admin-credentials"
+    lfsJwtSecret: "nemo-ms-nemo-datastore--lfs-jwt" 
+  databaseConfig:
+    credentials:
+      user: ndsuser
+      secretName: datastore-pg-existing-secret
+      passwordKey: password
+    host: datastore-pg-postgresql.nemo.svc.cluster.local
+    port: 5432
+    databaseName: ndsdb
+  pvc:
+    name: "pvc-shared-data"
+    create: true
+    storageClass: ""
+    volumeAccessMode: ReadWriteOnce
+    size: "10Gi"
+  expose:
+    service:
+      type: ClusterIP
+      port: 8000
+  image:
+    repository: nvcr.io/nvidia/nemo-microservices/datastore
+    tag: "25.08"
+    pullPolicy: IfNotPresent
+    pullSecrets:
+      - ngc-secret
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "500m"
+    limits:
+      memory: "512Mi"
+      cpu: "1"
+---
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NemoEntitystore
+metadata:
+  name: nemoentitystore-sample
+  namespace: arhkp-nemo
+spec:
+  image:
+    repository: nvcr.io/nvidia/nemo-microservices/entity-store
+    tag: "25.08"
+    pullPolicy: IfNotPresent
+    pullSecrets:
+      - ngc-secret
+  expose:
+    service:
+      type: ClusterIP
+      port: 8000
+  databaseConfig:
+    databaseName: nesdb
+    host: entity-store-pg-postgresql.nemo.svc.cluster.local
+    port: 5432
+    credentials:
+      user: nesuser
+      secretName: entity-store-pg-existing-secret
+      passwordKey: password
+  datastore:
+    endpoint: http://nemodatastore-sample.nemo.svc.cluster.local:8000
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NemoEvaluator
+metadata:
+  name: nemoevaluator-sample
+  namespace: arhkp-nemo
+spec:
+  evaluationImages:
+    bigcodeEvalHarness: "nvcr.io/nvidia/nemo-microservices/eval-tool-benchmark-bigcode:0.12.21"
+    lmEvalHarness: "nvcr.io/nvidia/nemo-microservices/eval-tool-benchmark-lm-eval-harness:0.12.21"
+    similarityMetrics: "nvcr.io/nvidia/nemo-microservices/eval-tool-benchmark-custom-eval:0.12.21"
+    llmAsJudge: "nvcr.io/nvidia/nemo-microservices/eval-tool-benchmark-llm-as-a-judge:0.12.21"
+    mtBench: "nvcr.io/nvidia/nemo-microservices/eval-tool-benchmark-llm-as-a-judge:0.12.21"
+    retriever: "nvcr.io/nvidia/nemo-microservices/eval-tool-benchmark-retriever:0.12.21"
+    rag: "nvcr.io/nvidia/nemo-microservices/eval-tool-benchmark-rag:0.12.21"
+    bfcl: "nvcr.io/nvidia/nemo-microservices/eval-factory-benchmark-bfcl:25.6.1"
+    agenticEval: "nvcr.io/nvidia/nemo-microservices/eval-factory-benchmark-agentic-eval:25.6.1"
+  image:
+    repository: nvcr.io/nvidia/nemo-microservices/evaluator
+    tag: "25.06"
+    pullPolicy: IfNotPresent
+    pullSecrets:
+      - ngc-secret
+  expose:
+    service:
+      type: ClusterIP
+      port: 8000
+  argoWorkflows:
+    endpoint: https://argo-workflows-server.nemo.svc.cluster.local:2746
+    serviceAccount: argo-workflows-executor
+  vectorDB:
+    endpoint: http://milvus.nemo.svc.cluster.local:19530
+  datastore:
+    endpoint: http://nemodatastore-sample.nemo.svc.cluster.local:8000/v1/hf
+  entitystore:
+    endpoint: http://nemoentitystore-sample.nemo.svc.cluster.local:8000
+  databaseConfig:
+    host: evaluator-pg-postgresql.nemo.svc.cluster.local
+    port: 5432
+    databaseName: evaldb
+    credentials:
+      user: evaluser
+      secretName: evaluator-pg-existing-secret
+      passwordKey: password
+  otel:
+    enabled: true
+    exporterOtlpEndpoint: http://evaluator-otel-opentelemetry-collector.nemo.svc.cluster.local:4317
+  replicas: 1
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NemoGuardrail
+metadata:
+  name: nemoguardrails-sample
+  namespace: arhkp-nemo
+spec:
+  # required if a NIM endpoint is hosted by NVIDIA
+  configStore:
+    pvc:
+      name: "pvc-guardrail-config"
+      create: true
+      storageClass: ""
+      volumeAccessMode: ReadWriteOnce
+      size: "1Gi"
+  nimEndpoint:
+    baseURL: "http://meta-llama3-1b-instruct.nemo.svc.cluster.local:8000/v1"
+  databaseConfig:
+    host: guardrail-pg-postgresql.nemo.svc.cluster.local
+    port: 5432
+    databaseName: guardraildb
+    credentials:
+      user: guardrailuser
+      secretName: guardrail-pg-existing-secret
+      passwordKey: password
+  expose:
+    service:
+      type: ClusterIP
+      port: 8000
+  image:
+    repository: nvcr.io/nvidia/nemo-microservices/guardrails
+    tag: "25.08"
+    pullPolicy: IfNotPresent
+    pullSecrets:
+      - ngc-secret
+  metrics:
+    serviceMonitor: {}
+  replicas: 1
+  resources:
+    limits:
+      cpu: "1"
+      ephemeral-storage: 10Gi
+---
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NIMCache
+metadata:
+  name: meta-llama3-1b-instruct
+  namespace: arhkp-nemo
+spec:
+  # GPU node tolerations for OpenShift/Kubernetes clusters with tainted GPU nodes
+  tolerations:
+    - key: "g5-gpu"
+      operator: "Equal"
+      value: "true"
+      effect: "NoSchedule"
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+  source:
+    ngc:
+      modelPuller: nvcr.io/nim/meta/llama-3.2-1b-instruct:1.8.3
+      pullSecret: ngc-secret
+      authSecret: ngc-api-secret
+      model:
+        engine: tensorrt_llm
+        tensorParallelism: "1"
+  storage:
+    pvc:
+      create: true
+      storageClass: ""
+      size: "50Gi"
+      volumeAccessMode: ReadWriteOnce
+
+---
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NIMPipeline
+metadata:
+  name: llama3-1b-pipeline
+  namespace: arhkp-nemo
+spec:
+  services:
+    - name: meta-llama3-1b-instruct
+      enabled: true
+      spec:
+        env:
+          - name: NIM_PEFT_SOURCE
+            value: http://nemoentitystore-sample.nemo.svc.cluster.local:8000
+          - name: NIM_PEFT_REFRESH_INTERVAL
+            value: "180"
+          - name: NIM_MAX_CPU_LORAS
+            value: "16"
+          - name: NIM_MAX_GPU_LORAS
+            value: "8"
+          - name: NIM_GUIDED_DECODING_BACKEND
+            value: fast_outlines
+        image:
+          repository: nvcr.io/nim/meta/llama-3.2-1b-instruct
+          tag: 1.8.3
+          pullPolicy: IfNotPresent
+          pullSecrets:
+          - ngc-secret
+        authSecret: ngc-api-secret
+        storage:
+          nimCache:
+            name: meta-llama3-1b-instruct
+            profile: ''
+        replicas: 1
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+        # GPU node tolerations for OpenShift/Kubernetes clusters with tainted GPU nodes
+        tolerations:
+          - key: "g5-gpu"
+            operator: "Equal"
+            value: "true"
+            effect: "NoSchedule"
+          - key: "nvidia.com/gpu"
+            operator: "Exists"
+            effect: "NoSchedule"
+        expose:
+          service:
+            type: ClusterIP
+            port: 8000
+    

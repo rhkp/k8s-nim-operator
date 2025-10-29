@@ -79,7 +79,26 @@ oc get pods -n $NEMO_NAMESPACE -w
 
 **Expected**: All pods showing `Running` status (may take 15-20 minutes)
 
-## Step 3: Install NeMo Operator (v25.06)
+## Step 3: Install Volcano Scheduler
+
+```bash
+# Add Volcano Helm repository
+helm repo add volcano https://volcano-sh.github.io/helm-charts
+helm repo update
+
+# Pre-grant privileged SCC for OpenShift (prevents scheduler pod failure)
+oc adm policy add-scc-to-user privileged system:serviceaccount:$NEMO_NAMESPACE:volcano-scheduler
+
+# Install Volcano scheduler
+helm install volcano volcano/volcano \
+  --namespace $NEMO_NAMESPACE \
+  --version 1.9.0 \
+  --wait --timeout=300s
+```
+
+**Expected**: 4 volcano pods running (admission, controllers, scheduler + init completed)
+
+## Step 4: Install NeMo Operator (v25.06)
 
 ```bash
 # Add NeMo Helm repository
@@ -96,24 +115,22 @@ helm install nemo-operator nvidia-nemo/nemo-operator \
 
 **Expected**: NeMo operator pod running with 2/2 containers ready
 
-## Step 4: Install NIM Operator (v3.0.1)
+## Step 5: Install NIM Operator (v3.0.1)
 
 ```bash
-# Add NVIDIA Helm repository
-helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
-helm repo update
-
-# Install NIM Operator
-helm install k8s-nim-operator nvidia/k8s-nim-operator \
+# Install NIM Operator using OpenShift-specific Helm chart
+helm install k8s-nim-operator /tmp/k8s-nim-operator/deployments/helm/k8s-nim-operator \
   -n $NEMO_NAMESPACE \
-  --set manager.resources.limits.memory=512Mi \
-  --set manager.resources.requests.memory=256Mi \
+  --set operator.resources.limits.memory=512Mi \
+  --set operator.resources.requests.memory=256Mi \
   --wait --timeout=300s
 ```
 
 **Expected**: NIM operator pod running with 1/1 container ready
 
-## Step 5: Deploy NEMO Samples
+> **Critical**: OpenShift requires the local Helm chart from the `deploy-v3.0-on-openshift` branch. The official NVIDIA Helm repository chart (`nvidia/k8s-nim-operator`) is not compatible with OpenShift due to security context and permission differences.
+
+## Step 6: Deploy NEMO Samples
 
 ```bash
 # Download and customize NEMO samples
@@ -128,9 +145,9 @@ oc apply -f nemo-samples.yaml
 
 **Expected**: 7 custom resources created (NemoCustomizer, NemoDatastore, NemoEntitystore, NemoEvaluator, NemoGuardrail, NIMCache, NIMPipeline)
 
-## Step 6: Verify Deployment
+## Step 7: Verify Deployment
 
-### 6.1 Check Infrastructure Services
+### 7.1 Check Infrastructure Services
 ```bash
 # Verify infrastructure pods are running
 oc get pods -n $NEMO_NAMESPACE | grep -E "(postgresql|opentelemetry|mlflow|argo|milvus)"
@@ -138,7 +155,7 @@ oc get pods -n $NEMO_NAMESPACE | grep -E "(postgresql|opentelemetry|mlflow|argo|
 
 **Expected**: All infrastructure pods showing `Running` status
 
-### 6.2 Check NEMO Microservices
+### 7.2 Check NEMO Microservices
 ```bash
 # Verify NEMO microservices are Ready
 oc get -n $NEMO_NAMESPACE nemoentitystore,nemodatastore,nemoguardrails,nemocustomizer,nemoevaluator
@@ -146,7 +163,7 @@ oc get -n $NEMO_NAMESPACE nemoentitystore,nemodatastore,nemoguardrails,nemocusto
 
 **Expected**: All 5 services showing `STATUS: Ready`
 
-### 6.3 Check NIM Services
+### 7.3 Check NIM Services
 ```bash
 # Verify NIM services are Ready
 oc get -n $NEMO_NAMESPACE nimpipeline,nimcache,nimservice
@@ -154,7 +171,7 @@ oc get -n $NEMO_NAMESPACE nimpipeline,nimcache,nimservice
 
 **Expected**: All 3 services showing `STATUS: Ready` (NIM cache may be pending without GPU nodes)
 
-### 6.4 Test API Endpoint
+### 7.4 Test API Endpoint
 ```bash
 # Test NEMO Customizer API
 oc run test-api --image=curlimages/curl:latest -n $NEMO_NAMESPACE --restart=Never -- \
@@ -196,8 +213,8 @@ helm repo update
 helm install nemo-operator nvidia-nemo/nemo-operator -n $NEMO_NAMESPACE \
   --set manager.resources.limits.memory=512Mi --wait --timeout=300s
 
-helm install k8s-nim-operator nvidia/k8s-nim-operator -n $NEMO_NAMESPACE \
-  --set manager.resources.limits.memory=512Mi --wait --timeout=300s
+helm install k8s-nim-operator /tmp/k8s-nim-operator/deployments/helm/k8s-nim-operator -n $NEMO_NAMESPACE \
+  --set operator.resources.limits.memory=512Mi --wait --timeout=300s
 
 # 5. Deploy samples
 curl -o nemo-samples.yaml https://raw.githubusercontent.com/NVIDIA/k8s-nim-operator/main/config/samples/nemo/latest/all_in_one.yaml
