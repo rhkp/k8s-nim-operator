@@ -153,7 +153,10 @@ helm install k8s-nim-operator /tmp/k8s-nim-operator/deployments/helm/k8s-nim-ope
 
 ```bash
 # Use the OpenShift-optimized NEMO samples with GPU tolerations pre-configured
-oc apply -f nemo-samples.yaml
+# CRITICAL: Fix ALL namespace references (both metadata and service hostnames)
+sed -e 's/namespace: arhkp-nemo/namespace: '$NEMO_NAMESPACE'/g' \
+    -e 's/\.nemo\.svc\.cluster\.local/.'$NEMO_NAMESPACE'.svc.cluster.local/g' \
+    nemo-samples.yaml | oc apply -f -
 ```
 
 > **Note**: The provided `nemo-samples.yaml` includes GPU node tolerations for common OpenShift configurations (`g5-gpu` and `nvidia.com/gpu` taints). No additional configuration needed.
@@ -236,9 +239,10 @@ helm install k8s-nim-operator /tmp/k8s-nim-operator/deployments/helm/k8s-nim-ope
   --set operator.resources.limits.memory=512Mi --wait --timeout=300s
 
 # 5. Deploy samples
-curl -o nemo-samples.yaml https://raw.githubusercontent.com/NVIDIA/k8s-nim-operator/main/config/samples/nemo/latest/all_in_one.yaml
-sed -i "s/namespace: nemo/namespace: $NEMO_NAMESPACE/g" nemo-samples.yaml
-oc apply -f nemo-samples.yaml
+# CRITICAL: Fix ALL namespace references (both metadata and service hostnames)
+sed -e 's/namespace: arhkp-nemo/namespace: '$NEMO_NAMESPACE'/g' \
+    -e 's/\.nemo\.svc\.cluster\.local/.'$NEMO_NAMESPACE'.svc.cluster.local/g' \
+    nemo-samples.yaml | oc apply -f -
 
 # 6. Verify
 oc get -n $NEMO_NAMESPACE nemoentitystore,nemodatastore,nemoguardrails,nemocustomizer,nemoevaluator
