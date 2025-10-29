@@ -124,6 +124,12 @@ helm install nemo-operator nvidia-nemo/nemo-operator \
   --set manager.resources.limits.memory=512Mi \
   --set manager.resources.requests.memory=256Mi \
   --wait --timeout=300s
+
+# CRITICAL: Patch service account to use NGC image pull secret
+oc patch serviceaccount nemo-operator-controller-manager -n $NEMO_NAMESPACE -p '{"imagePullSecrets": [{"name": "ngc-secret"}]}'
+
+# Restart the deployment to pick up the new secret
+oc delete pod -n $NEMO_NAMESPACE -l app.kubernetes.io/name=nemo-operator
 ```
 
 **Expected**: NeMo operator pod running with 2/2 containers ready
@@ -221,6 +227,10 @@ helm repo update
 
 helm install nemo-operator nvidia-nemo/nemo-operator -n $NEMO_NAMESPACE \
   --set manager.resources.limits.memory=512Mi --wait --timeout=300s
+
+# CRITICAL: Patch service account for NGC image pull secret
+oc patch serviceaccount nemo-operator-controller-manager -n $NEMO_NAMESPACE -p '{"imagePullSecrets": [{"name": "ngc-secret"}]}'
+oc delete pod -n $NEMO_NAMESPACE -l app.kubernetes.io/name=nemo-operator
 
 helm install k8s-nim-operator /tmp/k8s-nim-operator/deployments/helm/k8s-nim-operator -n $NEMO_NAMESPACE \
   --set operator.resources.limits.memory=512Mi --wait --timeout=300s

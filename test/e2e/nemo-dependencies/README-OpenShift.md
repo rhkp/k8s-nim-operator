@@ -797,6 +797,13 @@ oc get pods -n <your-namespace> | grep -E "(postgresql|opentelemetry|mlflow|argo
      --set manager.resources.limits.memory=512Mi \
      --set manager.resources.requests.memory=256Mi \
      --wait --timeout=300s
+
+   # CRITICAL: Patch service account to use NGC image pull secret
+   # This step is required for OpenShift to pull NGC container images
+   oc patch serviceaccount nemo-operator-controller-manager -n <your-namespace> -p '{"imagePullSecrets": [{"name": "ngc-secret"}]}'
+
+   # Restart the deployment to pick up the new secret
+   oc delete pod -n <your-namespace> -l app.kubernetes.io/name=nemo-operator
    ```
 
 3. **Verify Operator Installation**:
@@ -853,6 +860,23 @@ nemoguardrails.apps.nvidia.com
 ```
 
 ### Troubleshooting NeMo Operator
+
+**Issue**: NeMo Operator pod stuck in `ImagePullBackOff` status
+```bash
+# Error: Failed to pull image "nvcr.io/nvidia/nemo-operator:v25.06"
+```
+- **Root Cause**: Service account lacks NGC image pull secret for accessing NVIDIA container registry
+- **Solution**: Patch the service account to use NGC secret:
+```bash
+# Add NGC image pull secret to service account
+oc patch serviceaccount nemo-operator-controller-manager -n <your-namespace> -p '{"imagePullSecrets": [{"name": "ngc-secret"}]}'
+
+# Restart the deployment to pick up the new secret
+oc delete pod -n <your-namespace> -l app.kubernetes.io/name=nemo-operator
+
+# Verify pod is now running
+oc get pods -n <your-namespace> | grep nemo-operator
+```
 
 **Issue**: NeMo Operator fails with "no matches for kind 'PodGroup' in version 'scheduling.volcano.sh/v1beta1'"
 ```bash
