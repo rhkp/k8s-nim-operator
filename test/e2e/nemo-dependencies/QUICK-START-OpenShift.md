@@ -11,6 +11,7 @@ Get NVIDIA NEMO running on OpenShift in ~45 minutes with minimal configuration.
 - **CLI tools**: `oc`, `helm`, `ansible` installed and authenticated
 - **NGC API key** from [NVIDIA GPU Cloud](https://ngc.nvidia.com/)
 - **Cluster permissions**: namespace-admin or cluster-admin
+- **GPU nodes**: At least one GPU node (g5.xlarge, g5.2xlarge, etc.) for inference workloads
 
 ## Step 1: Configuration Setup
 
@@ -21,7 +22,19 @@ export NEMO_NAMESPACE="my-nemo"
 oc create namespace $NEMO_NAMESPACE
 ```
 
-### 1.2 Create NGC Secrets
+### 1.2 Validate Cluster Prerequisites
+```bash
+# Check for GPU nodes (should show nodes with nvidia.com/gpu labels)
+oc get nodes -l 'feature.node.kubernetes.io/pci-10de.present=true' \
+  -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\.com/gpu
+
+# Verify storage class exists
+oc get storageclass gp3-csi
+
+# Expected: At least one GPU node and gp3-csi storage class available
+```
+
+### 1.3 Create NGC Secrets
 ```bash
 # Replace <YOUR_NGC_API_KEY> with your actual NGC API key
 export NGC_API_KEY="<YOUR_NGC_API_KEY>"
@@ -39,7 +52,7 @@ oc create secret generic ngc-api-secret \
   -n $NEMO_NAMESPACE
 ```
 
-### 1.3 Configure values.yaml
+### 1.4 Configure values.yaml
 ```bash
 # Navigate to the deployment directory
 cd deploy-on-openshift/test/e2e/nemo-dependencies
@@ -133,15 +146,11 @@ helm install k8s-nim-operator /tmp/k8s-nim-operator/deployments/helm/k8s-nim-ope
 ## Step 6: Deploy NEMO Samples
 
 ```bash
-# Download and customize NEMO samples
-curl -o nemo-samples.yaml https://raw.githubusercontent.com/NVIDIA/k8s-nim-operator/main/config/samples/nemo/latest/all_in_one.yaml
-
-# Update namespace references
-sed -i "s/namespace: nemo/namespace: $NEMO_NAMESPACE/g" nemo-samples.yaml
-
-# Deploy NEMO Custom Resources
+# Use the OpenShift-optimized NEMO samples with GPU tolerations pre-configured
 oc apply -f nemo-samples.yaml
 ```
+
+> **Note**: The provided `nemo-samples.yaml` includes GPU node tolerations for common OpenShift configurations (`g5-gpu` and `nvidia.com/gpu` taints). No additional configuration needed.
 
 **Expected**: 7 custom resources created (NemoCustomizer, NemoDatastore, NemoEntitystore, NemoEvaluator, NemoGuardrail, NIMCache, NIMPipeline)
 
@@ -247,11 +256,13 @@ oc get -n $NEMO_NAMESPACE nemoentitystore,nemodatastore,nemoguardrails,nemocusto
 
 For detailed troubleshooting, configuration options, and architectural information, see [README-OpenShift.md](./README-OpenShift.md).
 
-**Common Quick Fixes:**
-- **Pods stuck pending**: Check storage class matches your cluster
-- **Operator CrashLoopBackOff**: Ensure memory limits are set to 512Mi
-- **Secrets errors**: Verify NGC API key is valid and secrets created
-- **Namespace errors**: Ensure consistent namespace usage throughout
+**Prerequisites Check:**
+- **Storage class**: Verify `gp3-csi` (or equivalent) supports `ReadWriteOnce`
+- **Memory resources**: Operators require 512Mi memory limits (pre-configured)
+- **NGC credentials**: Ensure API key is valid and secrets created correctly
+- **GPU nodes**: The samples include tolerations for `g5-gpu` and `nvidia.com/gpu` taints (pre-configured)
+
+> **Proactive Design**: This deployment is designed to succeed on first attempt. All common OpenShift configurations are pre-configured.
 
 ## What's Deployed
 

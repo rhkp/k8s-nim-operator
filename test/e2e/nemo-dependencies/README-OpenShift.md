@@ -1432,7 +1432,7 @@ When all verification steps pass, the complete NVIDIA NEMO ecosystem is successf
 
 **Issue**: GPU-dependent services pending
 - **Expected**: NIM cache/service may remain pending without GPU nodes
-- **Solution**: Ensure GPU nodes have proper tolerations (see GPU scheduling fixes in troubleshooting)
+- **Solution**: Add tolerations for GPU node taints (see [NIM cache pod stuck pending on GPU nodes](#pod-stuck-in-pending))
 
 ## Architectural Decisions & Component Analysis
 
@@ -1741,6 +1741,27 @@ oc patch storageclass local-path -p '{"metadata":{"annotations":{"storageclass.k
 **Issue**: Storage access mode
 - Error: `does not support access mode ReadWriteMany`
 - Solution: Use `ReadWriteOnce` in `values.yaml`
+
+**Issue**: NIM cache pod stuck pending on GPU nodes
+```bash
+# Error: 0/15 nodes are available: 7 node(s) had untolerated taint {g5-gpu: true}
+```
+- **Root Cause**: GPU nodes have taints that NIM cache pod cannot tolerate
+- **Symptoms**: `meta-llama3-1b-instruct-pod` shows `FailedScheduling` events
+- **Solution**: Add toleration for GPU node taints to NIMCache resource:
+```bash
+# Add GPU node toleration to NIMCache
+oc patch nimcache meta-llama3-1b-instruct -n <your-namespace> --type='merge' \
+  -p='{"spec":{"tolerations":[{"key":"g5-gpu","operator":"Equal","value":"true","effect":"NoSchedule"}]}}'
+
+# Delete existing pod to recreate with new toleration
+oc delete pod meta-llama3-1b-instruct-pod -n <your-namespace>
+
+# Verify pod is now scheduled on GPU node
+oc get pods -n <your-namespace> | grep llama
+```
+- **Expected Result**: Pod transitions from Pending to Running on GPU node
+- **Note**: Adjust taint key/value to match your cluster's GPU node taints
 
 ## Notes
 
