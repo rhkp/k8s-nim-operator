@@ -1,0 +1,270 @@
+# NVIDIA NEMO OpenShift Quick Start Guide
+
+Get NVIDIA NEMO running on OpenShift in ~45 minutes with minimal configuration.
+
+> **For detailed troubleshooting and configuration options, see [README-OpenShift.md](./README-OpenShift.md)**
+
+## Prerequisites
+
+- **OpenShift cluster** 4.x with ~200Gi storage available
+- **Storage class** supporting `ReadWriteOnce` (e.g., `gp3-csi` for AWS EBS)
+- **CLI tools**: `oc`, `helm`, `ansible` installed and authenticated
+- **NGC API key** from [NVIDIA GPU Cloud](https://ngc.nvidia.com/)
+- **Cluster permissions**: namespace-admin or cluster-admin
+
+## Step 1: Configuration Setup
+
+### 1.1 Create Target Namespace
+```bash
+# Replace 'my-nemo' with your preferred namespace name
+export NEMO_NAMESPACE="my-nemo"
+oc create namespace $NEMO_NAMESPACE
+```
+
+### 1.2 Create NGC Secrets
+```bash
+# Replace <YOUR_NGC_API_KEY> with your actual NGC API key
+export NGC_API_KEY="<YOUR_NGC_API_KEY>"
+
+# NGC Image Pull Secret
+oc create secret docker-registry ngc-secret \
+  --docker-server=nvcr.io \
+  --docker-username='$oauthtoken' \
+  --docker-password=$NGC_API_KEY \
+  -n $NEMO_NAMESPACE
+
+# NGC API Secret
+oc create secret generic ngc-api-secret \
+  --from-literal=NGC_API_KEY=$NGC_API_KEY \
+  -n $NEMO_NAMESPACE
+```
+
+### 1.3 Configure values.yaml
+```bash
+# Navigate to the deployment directory
+cd deploy-on-openshift/test/e2e/nemo-dependencies
+
+# Update values.yaml with your configuration
+# Edit these 3 key values:
+cat > values.yaml << EOF
+installation_namespace: $NEMO_NAMESPACE
+
+pvc:
+  storage_class: "gp3-csi"              # Replace with your storage class
+  volume_access_mode: ReadWriteOnce
+
+localPathProvisioner:
+  enabled: false
+
+install:
+  datastore: yes
+  entity_store: yes
+  customizer: yes
+  jupyter: yes
+  guardrail: yes
+  evaluator: yes
+EOF
+```
+
+## Step 2: Deploy Infrastructure Components
+
+```bash
+# Deploy all infrastructure components (PostgreSQL, MLflow, Argo, etc.)
+ansible-playbook -c local -i localhost install.yaml
+
+# Wait for infrastructure to be ready (~15-20 minutes)
+echo "Waiting for infrastructure deployment..."
+oc get pods -n $NEMO_NAMESPACE -w
+```
+
+**Expected**: All pods showing `Running` status (may take 15-20 minutes)
+
+## Step 3: Install NeMo Operator (v25.06)
+
+```bash
+# Add NeMo Helm repository
+helm repo add nvidia-nemo https://helm.ngc.nvidia.com/nvidia-nemo
+helm repo update
+
+# Install NeMo Operator
+helm install nemo-operator nvidia-nemo/nemo-operator \
+  -n $NEMO_NAMESPACE \
+  --set manager.resources.limits.memory=512Mi \
+  --set manager.resources.requests.memory=256Mi \
+  --wait --timeout=300s
+```
+
+**Expected**: NeMo operator pod running with 2/2 containers ready
+
+## Step 4: Install NIM Operator (v3.0.1)
+
+```bash
+# Add NVIDIA Helm repository
+helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+helm repo update
+
+# Install NIM Operator
+helm install k8s-nim-operator nvidia/k8s-nim-operator \
+  -n $NEMO_NAMESPACE \
+  --set manager.resources.limits.memory=512Mi \
+  --set manager.resources.requests.memory=256Mi \
+  --wait --timeout=300s
+```
+
+**Expected**: NIM operator pod running with 1/1 container ready
+
+## Step 5: Deploy NEMO Samples
+
+```bash
+# Download and customize NEMO samples
+curl -o nemo-samples.yaml https://raw.githubusercontent.com/NVIDIA/k8s-nim-operator/main/config/samples/nemo/latest/all_in_one.yaml
+
+# Update namespace references
+sed -i "s/namespace: nemo/namespace: $NEMO_NAMESPACE/g" nemo-samples.yaml
+
+# Deploy NEMO Custom Resources
+oc apply -f nemo-samples.yaml
+```
+
+**Expected**: 7 custom resources created (NemoCustomizer, NemoDatastore, NemoEntitystore, NemoEvaluator, NemoGuardrail, NIMCache, NIMPipeline)
+
+## Step 6: Verify Deployment
+
+### 6.1 Check Infrastructure Services
+```bash
+# Verify infrastructure pods are running
+oc get pods -n $NEMO_NAMESPACE | grep -E "(postgresql|opentelemetry|mlflow|argo|milvus)"
+```
+
+**Expected**: All infrastructure pods showing `Running` status
+
+### 6.2 Check NEMO Microservices
+```bash
+# Verify NEMO microservices are Ready
+oc get -n $NEMO_NAMESPACE nemoentitystore,nemodatastore,nemoguardrails,nemocustomizer,nemoevaluator
+```
+
+**Expected**: All 5 services showing `STATUS: Ready`
+
+### 6.3 Check NIM Services
+```bash
+# Verify NIM services are Ready
+oc get -n $NEMO_NAMESPACE nimpipeline,nimcache,nimservice
+```
+
+**Expected**: All 3 services showing `STATUS: Ready` (NIM cache may be pending without GPU nodes)
+
+### 6.4 Test API Endpoint
+```bash
+# Test NEMO Customizer API
+oc run test-api --image=curlimages/curl:latest -n $NEMO_NAMESPACE --restart=Never -- \
+  curl -X GET "http://nemocustomizer-sample.$NEMO_NAMESPACE:8000/v1/customization/configs"
+
+# Check result and cleanup
+sleep 5
+oc logs test-api -n $NEMO_NAMESPACE
+oc delete pod test-api -n $NEMO_NAMESPACE
+```
+
+**Expected**: JSON response with available model configurations
+
+## Quick Reference - Complete Command Sequence
+
+```bash
+# 1. Setup
+export NEMO_NAMESPACE="my-nemo"
+export NGC_API_KEY="<YOUR_NGC_API_KEY>"
+oc create namespace $NEMO_NAMESPACE
+
+# 2. Create secrets
+oc create secret docker-registry ngc-secret \
+  --docker-server=nvcr.io --docker-username='$oauthtoken' \
+  --docker-password=$NGC_API_KEY -n $NEMO_NAMESPACE
+oc create secret generic ngc-api-secret \
+  --from-literal=NGC_API_KEY=$NGC_API_KEY -n $NEMO_NAMESPACE
+
+# 3. Configure and deploy infrastructure
+cd deploy-on-openshift/test/e2e/nemo-dependencies
+# Edit values.yaml with your namespace and storage class
+ansible-playbook -c local -i localhost install.yaml
+
+# 4. Install operators
+helm repo add nvidia-nemo https://helm.ngc.nvidia.com/nvidia-nemo
+helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+helm repo update
+
+helm install nemo-operator nvidia-nemo/nemo-operator -n $NEMO_NAMESPACE \
+  --set manager.resources.limits.memory=512Mi --wait --timeout=300s
+
+helm install k8s-nim-operator nvidia/k8s-nim-operator -n $NEMO_NAMESPACE \
+  --set manager.resources.limits.memory=512Mi --wait --timeout=300s
+
+# 5. Deploy samples
+curl -o nemo-samples.yaml https://raw.githubusercontent.com/NVIDIA/k8s-nim-operator/main/config/samples/nemo/latest/all_in_one.yaml
+sed -i "s/namespace: nemo/namespace: $NEMO_NAMESPACE/g" nemo-samples.yaml
+oc apply -f nemo-samples.yaml
+
+# 6. Verify
+oc get -n $NEMO_NAMESPACE nemoentitystore,nemodatastore,nemoguardrails,nemocustomizer,nemoevaluator
+```
+
+## Success Criteria
+
+✅ **Infrastructure**: ~15 pods running (PostgreSQL, MLflow, Argo, Milvus, OpenTelemetry)
+✅ **Operators**: 2 operator pods running (nemo-operator, k8s-nim-operator)
+✅ **NEMO Services**: 5 microservices showing `Ready` status
+✅ **NIM Services**: 3 NIM components deployed (cache may be pending without GPU)
+✅ **API Test**: Successful JSON response from customizer endpoint
+
+## Timeline
+
+- **Configuration**: 5 minutes
+- **Infrastructure deployment**: 15-20 minutes
+- **Operators installation**: 5-10 minutes
+- **NEMO samples deployment**: 10-15 minutes
+- **Verification**: 5 minutes
+
+**Total**: ~45 minutes to working NEMO deployment
+
+## Troubleshooting
+
+For detailed troubleshooting, configuration options, and architectural information, see [README-OpenShift.md](./README-OpenShift.md).
+
+**Common Quick Fixes:**
+- **Pods stuck pending**: Check storage class matches your cluster
+- **Operator CrashLoopBackOff**: Ensure memory limits are set to 512Mi
+- **Secrets errors**: Verify NGC API key is valid and secrets created
+- **Namespace errors**: Ensure consistent namespace usage throughout
+
+## What's Deployed
+
+### Infrastructure Components
+- **Datastore**: PostgreSQL database for data management
+- **Entity Store**: PostgreSQL database for entity metadata
+- **Customizer**: MLflow + PostgreSQL + OpenTelemetry for model customization
+- **Jupyter**: Notebook server for development
+- **Guardrail**: PostgreSQL database for safety controls
+- **Evaluator**: Argo Workflows + Milvus + PostgreSQL + OpenTelemetry for evaluation
+
+### NEMO Microservices
+- **NemoCustomizer**: Model fine-tuning and customization service
+- **NemoDatastore**: Data management and storage service
+- **NemoEntitystore**: Entity and model metadata management
+- **NemoEvaluator**: Model evaluation and benchmarking service
+- **NemoGuardrail**: Safety and content filtering service
+
+### NIM Services
+- **NIMCache**: Model caching (meta-llama3-1b-instruct)
+- **NIMPipeline**: Inference pipeline for Llama 3.2 1B model
+- **NIMService**: Production inference service
+
+## Next Steps
+
+With NEMO deployed, you can:
+- **Upload datasets** via NemoDatastore API
+- **Fine-tune models** using NemoCustomizer
+- **Set up guardrails** for content filtering
+- **Run evaluations** on model performance
+- **Deploy inference** using NIM services
+
+For production use, review security considerations and customize configurations as described in the full [README-OpenShift.md](./README-OpenShift.md).

@@ -1,46 +1,46 @@
 # NVIDIA NIM Operator E2E Dependencies - OpenShift Deployment
 
-Quick guide for deploying NVIDIA NIM Operator E2E test dependencies on OpenShift.
+Complete guide for deploying NVIDIA NIM Operator E2E test dependencies on OpenShift.
+
+> **🚀 New to NVIDIA NEMO? Start with the [Quick Start Guide](./QUICK-START-OpenShift.md) for a streamlined 45-minute deployment.**
+>
+> This document provides comprehensive configuration options, troubleshooting, and architectural details.
 
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
 
-- [Datastore Component Deployment](#datastore-component-deployment)
-  - [Troubleshooting](#troubleshooting)
-    - [Generated Files](#generated-files)
-  - [Verification](#verification)
-
-- [Entity-Store Component Deployment](#entity-store-component-deployment)
-  - [Troubleshooting](#troubleshooting-1)
-    - [Generated Files](#generated-files-1)
-  - [Verification](#verification-1)
-
-- [Customizer Component Deployment](#customizer-component-deployment)
-  - [Troubleshooting](#troubleshooting-2)
-  - [Generated Files](#generated-files-2)
-  - [MLflow Deployment Options](#mlflow-deployment-options)
-    - [Option 1: MLflow without MinIO (Simple Setup)](#option-1-mlflow-without-minio-simple-setup)
-    - [Option 2: MLflow with MinIO (Enhanced Setup)](#option-2-mlflow-with-minio-enhanced-setup)
-  - [Customizer Verification](#customizer-verification)
-  - [Customizer Post-Deployment Setup for MinIO (Option 2)](#customizer-post-deployment-setup-for-minio-option-2)
-  - [Choosing Between MLflow Options (Customizer)](#choosing-between-mlflow-options-customizer)
-
-- [Jupyter Component Deployment](#jupyter-component-deployment)
-  - [Generated Files](#generated-files-3)
-  - [Verification](#verification-3)
-
-- [Guardrail Component Deployment](#guardrail-component-deployment)
-  - [Generated Files](#generated-files-4)
-  - [Verification](#verification-4)
-
-- [Evaluator Component Deployment](#evaluator-component-deployment)
-  - [Generated Files](#generated-files-5)
-  - [Argo Workflows Configuration](#argo-workflows-configuration)
-    - [Cluster Conflict Resolution](#cluster-conflict-resolution)
-    - [Namespaced Mode Benefits](#namespaced-mode-benefits)
-  - [Component Architecture](#component-architecture)
-  - [Verification](#verification-5)
+- [Infrastructure Components](#infrastructure-components)
+  - [Datastore Component Deployment](#datastore-component-deployment)
+    - [Troubleshooting](#troubleshooting)
+      - [Generated Files](#generated-files)
+    - [Verification](#verification)
+  - [Entity-Store Component Deployment](#entity-store-component-deployment)
+    - [Troubleshooting](#troubleshooting-1)
+      - [Generated Files](#generated-files-1)
+    - [Verification](#verification-1)
+  - [Customizer Component Deployment](#customizer-component-deployment)
+    - [Troubleshooting](#troubleshooting-2)
+    - [Generated Files](#generated-files-2)
+    - [MLflow Deployment Options](#mlflow-deployment-options)
+      - [Option 1: MLflow without MinIO (Simple Setup)](#option-1-mlflow-without-minio-simple-setup)
+      - [Option 2: MLflow with MinIO (Enhanced Setup)](#option-2-mlflow-with-minio-enhanced-setup)
+    - [Customizer Verification](#customizer-verification)
+    - [Customizer Post-Deployment Setup for MinIO (Option 2)](#customizer-post-deployment-setup-for-minio-option-2)
+    - [Choosing Between MLflow Options (Customizer)](#choosing-between-mlflow-options-customizer)
+  - [Jupyter Component Deployment](#jupyter-component-deployment)
+    - [Generated Files](#generated-files-3)
+    - [Verification](#verification-3)
+  - [Guardrail Component Deployment](#guardrail-component-deployment)
+    - [Generated Files](#generated-files-4)
+    - [Verification](#verification-4)
+  - [Evaluator Component Deployment](#evaluator-component-deployment)
+    - [Generated Files](#generated-files-5)
+    - [Argo Workflows Configuration](#argo-workflows-configuration)
+      - [Cluster Conflict Resolution](#cluster-conflict-resolution)
+      - [Namespaced Mode Benefits](#namespaced-mode-benefits)
+    - [Component Architecture](#component-architecture)
+    - [Verification](#verification-5)
 
 - [NeMo Operator Installation (v25.06)](#nemo-operator-installation-v2506)
   - [Prerequisites](#nemo-operator-prerequisites)
@@ -51,9 +51,10 @@ Quick guide for deploying NVIDIA NIM Operator E2E test dependencies on OpenShift
 - [NIM Operator Installation (v3.0.1)](#nim-operator-installation-v301)
   - [Prerequisites](#nim-operator-prerequisites)
   - [NIM Operator Deployment](#nim-operator-deployment)
-  - [NEMO Samples Deployment](#nemo-samples-deployment)
   - [Verification](#nim-operator-verification)
   - [Troubleshooting NIM Operator](#troubleshooting-nim-operator)
+
+- [NEMO Samples Deployment](#nemo-samples-deployment)
 
 - [NEMO Microservices Verification](#nemo-microservices-verification)
   - [Overview](#overview)
@@ -87,7 +88,11 @@ Quick guide for deploying NVIDIA NIM Operator E2E test dependencies on OpenShift
 - Ansible installed locally
 - Target namespace created (update `installation_namespace` in `values.yaml`)
 
-## Datastore Component Deployment
+## Infrastructure Components
+
+The infrastructure components provide the foundational services required for the NVIDIA NEMO ecosystem. These components should be deployed first before installing the operators.
+
+### Datastore Component Deployment
 
 1. **Update values.yaml**:
 
@@ -142,7 +147,7 @@ NAME                        READY   STATUS    RESTARTS   AGE
 datastore-pg-postgresql-0   1/1     Running   0          10m
 ```
 
-## Entity-Store Component Deployment
+### Entity-Store Component Deployment
 
 1. **Update values.yaml**:
 
@@ -197,7 +202,7 @@ NAME                            READY   STATUS    RESTARTS   AGE
 entity-store-pg-postgresql-0    1/1     Running   0          10m
 ```
 
-## Customizer Component Deployment
+### Customizer Component Deployment
 
 1. **Update values.yaml**:
 
@@ -410,7 +415,7 @@ MLflow is automatically configured to use MinIO for artifact storage when the mi
 
 **Current Implementation**: This deployment uses **Option 2 (MLflow with MinIO)** for enhanced artifact storage capabilities.
 
-## Jupyter Component Deployment
+### Jupyter Component Deployment
 
 1. **Update values.yaml**:
 
@@ -479,7 +484,7 @@ oc port-forward svc/jupyter-service -n <your-namespace> 8888:8888
 # Default token: token (⚠️ SECURITY: Change in production)
 ```
 
-## Guardrail Component Deployment
+### Guardrail Component Deployment
 
 1. **Update values.yaml**:
 
@@ -536,7 +541,7 @@ NAME                            READY   STATUS    RESTARTS   AGE
 guardrail-pg-postgresql-0       1/1     Running   0          10m
 ```
 
-## Evaluator Component Deployment
+### Evaluator Component Deployment
 
 1. **Update values.yaml**:
 
@@ -734,6 +739,48 @@ oc get pods -n <your-namespace> | grep -E "(postgresql|opentelemetry|mlflow|argo
 # Should show all infrastructure services running
 ```
 
+### Volcano Scheduler Installation (Required for NeMo Operator)
+
+**IMPORTANT**: The NeMo Operator requires Volcano scheduler for advanced GPU job scheduling and PodGroup CRDs.
+
+1. **Install Volcano Scheduler**:
+   ```bash
+   # Add Volcano Helm repository
+   helm repo add volcano https://volcano-sh.github.io/helm-charts
+   helm repo update
+
+   # Install Volcano scheduler
+   helm install volcano volcano/volcano \
+     --namespace <your-namespace> \
+     --version 1.9.0 \
+     --wait --timeout=300s
+
+   # Grant privileged SCC to volcano-scheduler for hostPath volumes
+   oc adm policy add-scc-to-user privileged system:serviceaccount:<your-namespace>:volcano-scheduler
+
+   # Restart volcano-scheduler to apply SCC permissions
+   oc rollout restart deployment volcano-scheduler -n <your-namespace>
+   ```
+
+2. **Verify Volcano Installation**:
+   ```bash
+   # Check all Volcano pods are running
+   oc get pods -n <your-namespace> | grep volcano
+
+   # Verify PodGroup CRD is installed
+   oc get crd | grep podgroup
+   ```
+
+   Expected output:
+   ```
+   volcano-admission-xxxxx                         1/1     Running     0          2m
+   volcano-controllers-xxxxx                       1/1     Running     0          2m
+   volcano-scheduler-xxxxx                         1/1     Running     0          2m
+   volcano-admission-init-xxxxx                    0/1     Completed   0          2m
+
+   podgroups.scheduling.volcano.sh                 2025-XX-XX
+   ```
+
 ### NeMo Operator Deployment
 
 1. **Add NVIDIA NeMo Helm Repository**:
@@ -807,6 +854,34 @@ nemoguardrails.apps.nvidia.com
 
 ### Troubleshooting NeMo Operator
 
+**Issue**: NeMo Operator fails with "no matches for kind 'PodGroup' in version 'scheduling.volcano.sh/v1beta1'"
+```bash
+# Error: unable to create controller: no matches for kind "PodGroup" in version "scheduling.volcano.sh/v1beta1"
+```
+- **Root Cause**: Volcano scheduler not installed or PodGroup CRDs missing
+- **Solution**: Install Volcano scheduler first:
+```bash
+# Install Volcano scheduler
+helm install volcano volcano/volcano --namespace <your-namespace> --version 1.9.0
+oc adm policy add-scc-to-user privileged system:serviceaccount:<your-namespace>:volcano-scheduler
+oc rollout restart deployment volcano-scheduler -n <your-namespace>
+
+# Verify PodGroup CRD exists
+oc get crd | grep podgroup
+```
+
+**Issue**: Volcano scheduler pod stuck in pending with SCC violations
+```bash
+# Error: pods "volcano-scheduler-xxx-" is forbidden: unable to validate against any security context constraint
+# [...] spec.volumes[1]: Invalid value: "hostPath": hostPath volumes are not allowed to be used
+```
+- **Root Cause**: Volcano scheduler requires privileged SCC for hostPath volumes (`/tmp/klog-socks`)
+- **Solution**: Grant privileged SCC to volcano-scheduler service account:
+```bash
+oc adm policy add-scc-to-user privileged system:serviceaccount:<your-namespace>:volcano-scheduler
+oc rollout restart deployment volcano-scheduler -n <your-namespace>
+```
+
 **Issue**: NeMo Operator CrashLoopBackOff with OOMKilled
 ```bash
 # Error: pod killed due to memory limit
@@ -857,7 +932,9 @@ helm search repo nvidia-nemo/nemo-operator
 
 ## NIM Operator Installation (v3.0.1)
 
-The NVIDIA NIM Operator v3.0.1 is required for deploying, scaling, and serving models for inference in production. This operator works **alongside** the NeMo Operator and should be installed **second**. The NIM Operator manages the NEMO samples that use the infrastructure deployed by the NeMo Operator.
+The NVIDIA NIM Operator v3.0.1 is required for deploying, scaling, and serving models for inference in production. This operator works **alongside** the NeMo Operator and should be installed **second**.
+
+**⚠️ Critical Architecture Note**: The NIM Operator actually manages the NEMO microservice workloads (nemocustomizer, nemodatastore, nemoentitystore, nemoguardrail, nemoevaluator), while the NeMo Operator handles training jobs (nemotrainingjobs, nemovalidationjobs). The NIM operator may experience restarts on some clusters due to cluster health issues.
 
 ### Prerequisites {#nim-operator-prerequisites}
 
@@ -914,11 +991,12 @@ oc get pods -n <your-namespace> | grep -E "(postgresql|opentelemetry|mlflow|argo
 
 3. **Install NIM Operator v3.0.1**:
    ```bash
-   # Install NIM Operator with proper resource limits
+   # Install NIM Operator with namespace scoping (critical for OpenShift stability)
    helm install k8s-nim-operator nvidia/k8s-nim-operator \
      -n <your-namespace> \
-     --set manager.resources.limits.memory=512Mi \
-     --set manager.resources.requests.memory=256Mi \
+     --set manager.resources.limits.memory=1Gi \
+     --set manager.resources.requests.memory=512Mi \
+     --set manager.env.WATCH_NAMESPACE=<your-namespace> \
      --wait --timeout=300s
    ```
 
@@ -940,40 +1018,8 @@ oc get pods -n <your-namespace> | grep -E "(postgresql|opentelemetry|mlflow|argo
    k8s-nim-operator-xxxx-xxxx                   1/1     Running   0          2m
    ```
 
-### NEMO Samples Deployment
+**⚠️ Important**: The NIM operator requires namespace scoping (`WATCH_NAMESPACE`) for OpenShift stability. This operator manages the actual NEMO microservice workloads.
 
-1. **Prepare Samples Configuration**:
-   ```bash
-   # Download and modify official samples
-   curl -o nemo-samples.yaml https://raw.githubusercontent.com/NVIDIA/k8s-nim-operator/main/config/samples/nemo/latest/all_in_one.yaml
-
-   # Update namespace references
-   sed -i 's/namespace: nemo/namespace: <your-namespace>/g' nemo-samples.yaml
-   ```
-
-2. **Deploy NEMO Custom Resources**:
-   ```bash
-   # Apply all NEMO samples
-   oc apply -f nemo-samples.yaml
-   ```
-
-   This deploys:
-   - **NemoCustomizer**: Fine-tuning and model customization service
-   - **NemoDatastore**: Data management and storage service
-   - **NemoEntitystore**: Entity and model metadata management
-   - **NemoEvaluator**: Model evaluation and benchmarking service
-   - **NemoGuardrail**: Safety and content filtering service
-   - **NIMCache**: Model caching (meta-llama3-1b-instruct)
-   - **NIMPipeline**: Inference pipeline for Llama 3.2 1B model
-
-3. **Monitor Deployment Progress**:
-   ```bash
-   # Watch NEMO resources status
-   watch oc get nemocustomizer,nemodatastore,nemoentitystore,nemoevaluator,nemoguardrail,nimcache,nimpipeline -n <your-namespace>
-
-   # Monitor pod creation
-   watch oc get pods -n <your-namespace>
-   ```
 
 ### Verification {#nim-operator-verification}
 
@@ -1032,13 +1078,15 @@ curl -X POST http://localhost:8080/v1/completions \
 ```bash
 # Error: pod killed due to memory limit
 ```
-- **Root Cause**: Default memory limit (256Mi) insufficient for operator
-- **Solution**: Increase memory limits during installation:
+- **Root Cause**: NIM operator requires significantly more memory than documented (8Gi vs 512Mi)
+- **Solution**: Use high memory limits during installation:
 ```bash
 helm upgrade k8s-nim-operator nvidia/k8s-nim-operator \
   -n <your-namespace> \
-  --set manager.resources.limits.memory=512Mi \
-  --set manager.resources.requests.memory=256Mi
+  --set manager.resources.limits.memory=8Gi \
+  --set manager.resources.requests.memory=4Gi \
+  --set manager.resources.limits.cpu=4 \
+  --set manager.resources.requests.cpu=2
 ```
 
 **Issue**: NIM Operator Excessive Restarts (Cluster Health Related)
@@ -1123,6 +1171,63 @@ oc get pods -n <your-namespace> | grep postgresql
 - Configure authentication and authorization for production workloads
 - Set up monitoring and alerting for NEMO service health
 - Regular backup of PostgreSQL databases and MLflow artifacts
+
+## NEMO Samples Deployment
+
+The NEMO Samples deployment creates the actual NEMO microservices using the infrastructure deployed earlier and the operators. This should be deployed after both the NeMo Operator and NIM Operator are successfully installed.
+
+### Prerequisites
+
+Before deploying NEMO samples, ensure you have:
+
+1. **Both Operators Installed**: The NeMo Operator v25.06 and NIM Operator v3.0.1 must be running
+2. **All Infrastructure Components Deployed**: Complete infrastructure from Infrastructure Components section
+3. **NGC Credentials**: Valid NVIDIA GPU Cloud API key configured
+4. **Target Namespace**: Use existing `<your-namespace>` from previous deployments
+
+### Deploy NEMO Custom Resources
+
+1. **Prepare Samples Configuration**:
+   ```bash
+   # Clone the official NIM operator repository and checkout v3.0.1
+   cd /tmp
+   git clone https://github.com/NVIDIA/k8s-nim-operator.git
+   cd k8s-nim-operator && git checkout v3.0.1
+
+   # Copy and modify samples for our namespace
+   cp -r config/samples/nemo/latest /tmp/nemo-samples-modified
+   cd /tmp/nemo-samples-modified
+   sed -i "s/namespace: nemo/namespace: <your-namespace>/g" *.yaml
+   sed -i "s/\.nemo\.svc\.cluster\.local/.<your-namespace>.svc.cluster.local/g" *.yaml
+   ```
+
+2. **Deploy NEMO Custom Resources**:
+   ```bash
+   # Apply all NEMO samples
+   oc apply -n <your-namespace> -f /tmp/nemo-samples-modified/
+   ```
+
+   This deploys:
+   - **NemoCustomizer**: Fine-tuning and model customization service
+   - **NemoDatastore**: Data management and storage service
+   - **NemoEntitystore**: Entity and model metadata management
+   - **NemoEvaluator**: Model evaluation and benchmarking service
+   - **NemoGuardrail**: Safety and content filtering service
+   - **NIMCache**: Model caching (meta-llama3-1b-instruct)
+   - **NIMPipeline**: Inference pipeline for Llama 3.2 1B model
+
+3. **Monitor Deployment Progress**:
+   ```bash
+   # Watch NEMO resources status
+   watch oc get nemocustomizer,nemodatastore,nemoentitystore,nemoevaluator,nemoguardrail,nimcache,nimpipeline -n <your-namespace>
+
+   # Monitor pod creation
+   watch oc get pods -n <your-namespace>
+   ```
+
+### Verification
+
+The verification of NEMO samples deployment is covered in detail in the [NEMO Microservices Verification](#nemo-microservices-verification) section below.
 
 ## NEMO Microservices Verification
 
@@ -1335,7 +1440,7 @@ This section documents the analysis and decisions made regarding component enabl
 
 ### Volcano Batch Scheduler Analysis
 
-**Decision**: Volcano is **disabled** (`volcano.enabled: false`) in the main installation workflow.
+**Updated Decision**: Volcano is **REQUIRED** for NeMo Operator v25.06 and must be installed with proper OpenShift SCC configuration.
 
 **Why Volcano was Originally Included:**
 - **Batch Job Scheduling**: Advanced scheduling for GPU-intensive AI/ML workloads
@@ -1343,38 +1448,40 @@ This section documents the analysis and decisions made regarding component enabl
 - **Resource Management**: Efficient GPU sharing and queue management
 - **NVIDIA Ecosystem**: Common component in NVIDIA's AI platform stack
 
-**Why Volcano is Disabled:**
-```yaml
-# install.yaml override (CHANGED for safety)
-volcano:
-  enabled: false  # SAFETY: Disabled to prevent cluster-wide webhook issues
+**Critical Discovery**: NeMo Operator v25.06 **REQUIRES** Volcano for PodGroup CRDs and will fail without it.
+
+**OpenShift-Specific Requirements:**
+- **Volcano scheduler needs privileged SCC** for hostPath volumes (`/tmp/klog-socks`)
+- **Without proper SCC**: volcano-scheduler pod fails with security constraint violations
+- **Without Volcano**: NeMo operator fails with "no matches for kind 'PodGroup'"
+
+**Tested Working Configuration:**
+```bash
+# Install Volcano with proper OpenShift configuration
+helm install volcano volcano/volcano --namespace <your-namespace> --version 1.9.0
+oc adm policy add-scc-to-user privileged system:serviceaccount:<your-namespace>:volcano-scheduler
+oc rollout restart deployment volcano-scheduler -n <your-namespace>
 ```
 
-**Cluster-Wide Risk Analysis:**
-| Component | Risk Level | Impact Scope | Consequence if Failed |
-|-----------|------------|--------------|----------------------|
-| **Admission Webhooks** | 🚨 Critical | Entire Cluster | All pod creation blocked |
-| **ClusterRole/ClusterRoleBinding** | 🟡 Medium | Cluster-wide permissions | Security/access issues |
-| **Custom Resource Definitions** | 🟡 Medium | Cluster-wide API | API extension conflicts |
+**Verified Impact Assessment:**
+| Component | Actual Risk | Impact Scope | Solution |
+|-----------|-------------|--------------|----------|
+| **Volcano Installation** | 🟢 **Low** - Namespace-scoped deployment | Target namespace only | Use proper SCC configuration |
+| **NeMo Operator Without Volcano** | 🚨 **Critical** - Complete failure | NeMo operator non-functional | Install Volcano first |
+| **Missing SCC for volcano-scheduler** | 🟡 **Medium** - Pod stuck pending | Volcano scheduler only | Grant privileged SCC |
 
-**Real-World Impact Experienced:**
-- **Orphaned webhooks** from previous volcano installation blocked entire cluster
-- **All pod creation failed** across all namespaces due to webhook failures
-- **Required cluster-wide intervention** to remove webhook configurations
+**Updated Functional Impact Assessment:**
+| Workload Type | Impact without Volcano | Status |
+|---------------|------------------------|--------|
+| **Infrastructure Services** (MLflow, PostgreSQL, etc.) | 🟢 **No impact** - Standard Kubernetes scheduler sufficient | ✅ Verified working |
+| **NeMo Operator** | 🚨 **Critical failure** - Cannot start without PodGroup CRDs | ❌ Completely blocked |
+| **GPU Inference (NIMs)** | 🟠 **Blocked** - Depends on NeMo operator being functional | ❌ Cannot deploy without NeMo operator |
+| **Distributed Training** | 🟠 **Blocked** - Depends on NeMo operator being functional | ❌ Cannot deploy without NeMo operator |
 
-**Functional Impact Assessment:**
-| Workload Type | Impact without Volcano | Mitigation |
-|---------------|------------------------|------------|
-| **Infrastructure Services** (MLflow, PostgreSQL, etc.) | 🟢 **Verified: No impact** - Standard Kubernetes scheduler sufficient | Use default scheduler |
-| **GPU Inference (NIMs)** | 🟡 **Unknown** - Basic GPU scheduling may work, requires testing | Enable volcano per-workload when needed |
-| **Distributed Training** | 🟠 **Likely impact** - No gang scheduling available | Use Job/CronJob or enable volcano selectively |
-| **Batch Processing** | 🟠 **Likely impact** - No advanced queueing | Implement application-level queueing |
-
-**When to Re-enable Volcano:**
-- Deploying compute-intensive NIMs requiring GPU scheduling
-- Running distributed training workloads
-- Need for advanced batch job management
-- Production AI/ML pipeline requiring resource optimization
+**Updated Requirements:**
+- **Always required**: For any NVIDIA NeMo Operator v25.06 deployment
+- **OpenShift clusters**: Must grant privileged SCC to volcano-scheduler
+- **Production environments**: Volcano provides advanced GPU scheduling capabilities needed by NeMo
 
 ### Bitnami Init Container Analysis
 
