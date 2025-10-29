@@ -120,6 +120,7 @@ spec:
       - key: "nvidia.com/gpu"
         operator: "Exists"
         effect: "NoSchedule"
+---
 apiVersion: apps.nvidia.com/v1alpha1
 kind: NemoDatastore
 metadata:
@@ -191,6 +192,7 @@ spec:
       passwordKey: password
   datastore:
     endpoint: http://nemodatastore-sample.nemo.svc.cluster.local:8000
+---
 apiVersion: apps.nvidia.com/v1alpha1
 kind: NemoEvaluator
 metadata:
@@ -238,6 +240,7 @@ spec:
     enabled: true
     exporterOtlpEndpoint: http://evaluator-otel-opentelemetry-collector.nemo.svc.cluster.local:4317
   replicas: 1
+---
 apiVersion: apps.nvidia.com/v1alpha1
 kind: NemoGuardrail
 metadata:
