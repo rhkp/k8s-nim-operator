@@ -1849,3 +1849,168 @@ oc get pods -n <your-namespace> | grep llama
 | **Database Passwords** | Auto-generated | Strong, managed secrets |
 | **TLS/SSL** | Not configured | Required for all services |
 | **Network Policies** | Open | Restricted communication |
+
+## OpenShift Compatibility Adaptations
+
+This section documents the specific modifications and workarounds implemented to make NVIDIA's official NeMo deployment work on OpenShift. These adaptations address platform-specific requirements, security constraints, and compatibility issues encountered during the porting process.
+
+### Key Differences Summary
+
+| Category | NVIDIA O/fficial | OpenShift Implementation | Key Changes |
+|----------|----------------|-------------------------|-------------|
+| **Default Namespace** | `nemo` | `<your-namespace>` (configurable) | Namespace flexibility for multi-tenant environments |
+| **Storage Class** | `local-path` provisioner | `gp3-csi` (AWS EBS) | Enterprise-grade persistent storage |
+| **Volume Access Mode** | Default (ReadWriteMany) | `ReadWriteOnce` | AWS EBS compatibility |
+| **MLflow Installation** | Standard Bitnami chart | Custom runtime installation | OpenShift security context compliance |
+| **MinIO Image** | Bitnami MinIO | `quay.io/minio/minio:latest` | Official MinIO image for reliability |
+| **Init Containers** | Enabled (Bitnami) | Disabled | Avoid Bitnami utility dependencies |
+| **Volcano Scheduler** | Optional | Required with privileged SCC | NeMo Operator dependency requirement |
+| **Operators Required** | NIM Operator only | NeMo Operator + NIM Operator | Dual-operator architecture for complete functionality |
+
+### Container Image Modifications
+
+#### MLflow Component
+**Official NVIDIA**: Uses standard Bitnami MLflow Helm chart with default images
+**OpenShift Changes**:
+```yaml
+MLflow Server: docker.io/library/python:3.9-slim
+PostgreSQL: docker.io/bitnami/postgresql:latest
+Installation Method: pip install --prefix=/tmp/pip-install mlflow==2.12.2 psycopg2-binary
+Reason: Work around read-only filesystem restrictions in OpenShift security contexts
+```
+
+#### MinIO Component
+**Official NVIDIA**: Standard Bitnami MinIO setup
+**OpenShift Changes**:
+```yaml
+minio:
+  image:
+    registry: quay.io
+    repository: minio/minio
+    tag: latest
+  enableDefaultInitContainers: false
+  provisioning:
+    enabled: false
+```
+
+### OpenShift-Specific Configurations
+
+#### Storage Configuration
+**Storage Changes**:
+```yaml
+pvc:
+  storage_class: "gp3-csi"           # AWS EBS instead of local-path
+  volume_access_mode: ReadWriteOnce  # Not ReadWriteMany
+localPathProvisioner:
+  enabled: false                     # Use EBS instead of local-path
+```
+
+#### Security Context Constraints
+**Required SCC Configurations**:
+```bash
+# Volcano scheduler requires privileged SCC for hostPath volumes
+oc adm policy add-scc-to-user privileged system:serviceaccount:<your-namespace>:volcano-scheduler
+
+# Service account patching for NGC access
+oc patch serviceaccount nemo-operator-controller-manager -p '{"imagePullSecrets": [{"name": "ngc-secret"}]}'
+```
+
+#### GPU Node Tolerations
+**Added for OpenShift GPU Clusters**:
+```yaml
+tolerations:
+  - key: "g5-gpu"              # OpenShift-specific GPU node taint
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+  - key: "nvidia.com/gpu"      # Standard NVIDIA GPU taint
+    operator: "Exists"
+    effect: "NoSchedule"
+```
+
+### Deployment Process Differences
+
+#### Operator Installation Sequence
+**NVIDIA Official**: Single operator deployment
+**OpenShift Implementation**: Dual-operator sequence
+```
+1. Infrastructure Components (Ansible)
+2. Volcano Scheduler (Required for NeMo Operator)
+3. NeMo Operator v25.06 (Infrastructure management)
+4. NIM Operator v3.0.1 (Microservice workloads)
+5. NEMO Samples (Custom resources)
+```
+
+#### Helm Chart Sources
+**NVIDIA Official**: NVIDIA NGC Helm repository
+**OpenShift Changes**:
+- **NeMo Operator**: Uses NGC Helm repository
+- **NIM Operator**: Uses local chart from deploy-v3.0-on-openshift branch
+- **Reason**: Official NGC chart not compatible with OpenShift
+
+### Disabled Components for Compatibility
+
+#### Bitnami Init Containers
+**Components Disabled**:
+```yaml
+minio:
+  enableDefaultInitContainers: false
+  provisioning:
+    enabled: false
+postgresql:
+  enableDefaultInitContainers: false
+volumePermissions:
+  enabled: false
+```
+
+**Reasons for Disabling**:
+1. **Missing Utilities**: Bitnami charts expect proprietary utilities (`wait-for-port`, `wait-for-available-minio`)
+2. **Security Context Conflicts**: OpenShift handles security contexts automatically
+3. **Registry Rate Limiting**: Avoid Docker Hub rate limiting issues
+
+### Manual Setup Requirements
+
+#### Post-Deployment Steps Not Required in Official
+1. **MinIO Bucket Creation**: Manual setup required
+2. **Service Account Patching**: NGC image pull secrets
+3. **SCC Configuration**: Privileged permissions for Volcano
+4. **Operator Resource Limits**: Memory increase to 512Mi
+
+### Namespace Inconsistency Note
+
+**Important Finding**: The nemo-samples.yaml file shows:
+- **Namespace**: `arhkp-nemo`
+- **DNS References**: Still uses `.nemo.svc.cluster.local`
+
+This suggests the samples may require additional updates for complete namespace consistency.
+
+### Verification Differences
+
+#### NVIDIA Official
+- Basic pod and service checks
+- Single namespace (`nemo`) verification
+
+#### OpenShift Implementation
+- Multi-component verification across customizable namespace
+- Additional SCC and toleration verification
+- Dual-operator status checks
+- API endpoint testing with curl pods
+
+### Production Considerations
+
+#### Additional OpenShift Requirements
+- **Resource Quotas**: Consider namespace-level resource limits
+- **Network Policies**: OpenShift-specific networking security
+- **Image Registry**: Configure for enterprise image registries
+- **Backup Strategy**: Account for EBS volume backups vs local storage
+- **RBAC**: OpenShift-specific role-based access controls
+
+### Sources and References
+
+This comparison is based on analysis of:
+- **OpenShift Documentation**: This README-OpenShift.md file
+- **NVIDIA Official**: https://docs.nvidia.com/nim-operator/latest/nemo-prerequisites.html
+- **NVIDIA Official**: https://docs.nvidia.com/nim-operator/latest/deploy-nemo-microservices.html
+- **Sample Configuration**: nemo-samples.yaml in this directory
+
+**Note**: This comparison reflects the current state of the OpenShift implementation and may require updates as both NVIDIA's official documentation and the OpenShift adaptation evolve.
